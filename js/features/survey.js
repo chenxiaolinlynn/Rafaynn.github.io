@@ -51,7 +51,8 @@
 @media(max-width:600px){#survey-dialog{width:100%;height:100dvh;max-height:100dvh;max-width:100%;border:0;border-radius:0;padding:0 18px max(24px,env(safe-area-inset-bottom))}#survey-dialog header{margin:0 -18px 20px;padding-top:max(14px,env(safe-area-inset-top))}#survey-dialog article,#survey-dialog fieldset,#survey-dialog .survey-title-card{padding:18px}#survey-dialog .survey-history{padding:0}}
 `;
     document.head.append(style);
-    let items = [], storageKey = '';
+    let items = [], storageKey = '', view = '';
+    const timers = new Map();
     function el(tag, text, cls) {
         const node = document.createElement(tag);
         if (text !== undefined) node.textContent = text;
@@ -63,6 +64,7 @@
         node.type = 'button'; node.addEventListener('click', action); return node;
     }
     function frame(title, back = list) {
+        view = '';
         dialog.replaceChildren();
         const header = el('header'), heading = el('h2', title); heading.id = 'survey-heading';
         const arrow = button('←', back); arrow.className = 'survey-back'; arrow.setAttribute('aria-label', back === list ? '返回问卷列表' : '关闭问卷');
@@ -78,14 +80,14 @@
     }
     function actions(...nodes) { const row = el('div', undefined, 'survey-actions'); row.append(...nodes); dialog.append(row); }
     function list() {
-        frame('测一测', () => dialog.close());
+        frame('测一测', () => dialog.close()); view = 'list';
         const newButton = button('＋ 新建问卷', create); newButton.className = 'survey-new'; dialog.append(newButton);
         dialog.append(el('h3', '历史问卷', 'survey-section'));
         if (!items.length) dialog.append(el('p', '还没有问卷，来创建第一份吧', 'survey-empty'));
         [...items].reverse().forEach(item => {
             const card = el('article', undefined, 'survey-history');
-            const open = button('', () => item.responses.length ? results(item) : fill(item)); open.className = 'survey-open';
-            open.append(el('strong', item.title), el('p', `${item.questions.length} 道题 · ${item.responses.length ? '已回答' : '待回答'}`, 'survey-muted'));
+            const open = button('', () => item.dueAt || !item.responses.length ? pending(item) : results(item)); open.className = 'survey-open';
+            open.append(el('strong', item.title), el('p', `${item.questions.length} 道题 · ${item.dueAt ? '等待对方回答' : item.responses.length ? '已回答' : '待邀请'}`, 'survey-muted'));
             const latest = item.responses[item.responses.length - 1];
             if (latest) item.questions.slice(0, 2).forEach((q, index) => {
                 const preview = el('p', `${index + 1}. ${q.text}  `, 'survey-preview');
@@ -118,7 +120,7 @@
             const remove = button('×', () => { rows.splice(rows.indexOf(row), 1); box.remove(); renumber(); }); remove.className = 'survey-remove'; remove.setAttribute('aria-label', '移除题目'); row.remove = remove;
             head.append(number, question, remove); box.append(head);
             const types = el('div', undefined, 'survey-types'), optionsBox = el('div');
-            const hint = el('p', '填写时可自由输入文字回答', 'survey-muted'); hint.hidden = true;
+            const hint = el('p', '对方将从当前可用字卡中抽取回答', 'survey-muted'); hint.hidden = true;
             [['single','单选'],['multiple','多选'],['text','问字卡']].forEach(([value, text]) => {
                 const tab = button(text, () => { row.type = value; optionsBox.hidden = value === 'text'; hint.hidden = value !== 'text'; row.options.forEach(x => x.input.required = value !== 'text'); [...types.children].forEach(node => node.setAttribute('aria-pressed', String(node === tab))); });
                 tab.className = 'survey-type'; tab.setAttribute('aria-pressed', String(value === row.type)); types.append(tab);
@@ -137,40 +139,81 @@
         }
         add();
         const addQuestion = button('＋ 添加一题', add); addQuestion.className = 'survey-add-question';
-        const footer = el('div', undefined, 'survey-actions'), submit = el('button', '完成创建', 'primary'); submit.type = 'submit';
+        const footer = el('div', undefined, 'survey-actions'), submit = el('button', '邀请对方回答', 'primary'); submit.type = 'submit';
         footer.append(button('取消', list), submit); form.append(addQuestion, footer);
         form.addEventListener('submit', event => {
             event.preventDefault();
             const questions = rows.map(row => ({ text: row.question.value.trim(), type: row.type, options: row.type === 'text' ? [] : row.options.map(x => x.input.value.trim()) }));
             if (!title.value.trim() || !questions.length || questions.some(q => !q.text || (q.type !== 'text' && (q.options.some(x => !x) || new Set(q.options).size !== q.options.length)))) { error('请填写完整内容，选项不能留空或重复。'); return; }
-            if (save([...items, { id: crypto.randomUUID(), title: title.value.trim(), questions, responses: [] }])) list();
+            const item = { id: crypto.randomUUID(), title: title.value.trim(), questions, responses: [] };
+            invite(item, true);
         });
     }
-    function fill(item) {
-        frame(item.title); const form = el('form'); dialog.append(form);
-        dialog.append(el('p', '所有题目均为必填，可多次填写。', 'survey-muted'));
-        const controls = item.questions.map((q, index) => {
-            const box = el('fieldset'); box.append(el('legend', `${index + 1}. ${q.text}`)); form.append(box);
-            if (q.type === 'text') { const input = field(box, '你的回答', 'textarea'); input.required = true; input.maxLength = 5000; return () => input.value.trim(); }
-            const inputs = q.options.map(option => { const label = el('label', undefined, 'survey-choice'), input = el('input'); input.type = q.type === 'single' ? 'radio' : 'checkbox'; input.name = `question-${index}`; input.value = option; label.append(input, document.createTextNode(` ${option}`)); box.append(label); return input; });
-            return () => inputs.filter(input => input.checked).map(input => input.value);
+    function availableCards() {
+        const all = typeof customReplies !== 'undefined' && Array.isArray(customReplies) ? customReplies : [];
+        const disabled = new Set(JSON.parse(localStorage.getItem('disabledReplyItems') || '[]'));
+        (window.customReplyGroups || []).filter(g => g.disabled).forEach(g => (g.items || []).forEach(x => disabled.add(x)));
+        return all.filter(x => !disabled.has(x)).map(String).map(x => x.trim()).filter(Boolean);
+    }
+    function invite(item, isNew = false) {
+        let cards = [];
+        try { if (item.questions.some(q => q.type === 'text')) cards = availableCards(); }
+        catch { error('无法读取字卡库，请检查字卡设置。'); return; }
+        if (item.questions.some(q => q.type === 'text') && !cards.length) { error('问字卡需要可用的字卡内容，请先添加字卡，或改为单选、多选。'); return; }
+        const config = typeof settings !== 'undefined' ? settings : {};
+        const min = Math.max(1000, Math.min(300000, Number(config.replyDelayMin) || 3000));
+        const max = Math.max(min, Math.min(300000, Number(config.replyDelayMax) || 7000));
+        const next = { ...item, partnerName: config.partnerName || '对方', dueAt: Date.now() + min + Math.floor(Math.random() * (max - min)), cards };
+        if (save(isNew ? [...items, next] : items.map(x => x.id === item.id ? next : x))) { schedule(next, storageKey); pending(next); }
+    }
+    function pending(item) {
+        frame(item.title); view = item.id;
+        dialog.append(el('p', item.dueAt ? `${item.partnerName || '对方'}正在回答，完成后会显示答案。` : '问卷已准备好，邀请对方来回答吧。', 'survey-muted'));
+        item.questions.forEach((q, index) => {
+            const card = el('article'); card.append(el('strong', `${index + 1}. ${q.text}`));
+            q.options.forEach((option, i) => card.append(el('p', `${String.fromCharCode(65 + i)}. ${option}`, 'survey-muted'))); dialog.append(card);
         });
-        const submit = el('button', '提交回答', 'primary'); submit.type = 'submit'; const footer = el('div', undefined, 'survey-actions'); footer.append(button('取消', list), submit); form.append(footer);
-        form.addEventListener('submit', event => {
-            event.preventDefault(); const answers = controls.map(read => read());
-            if (answers.some(a => !a.length)) { error('请回答全部题目后再提交。'); return; }
-            const updated = { ...item, responses: [...item.responses, { time: new Date().toISOString(), answers }] };
-            if (save(items.map(x => x.id === item.id ? updated : x))) results(updated);
+        actions(button('返回列表', list));
+        if (!item.dueAt) actions(button('邀请对方回答', () => invite(item), true));
+    }
+    function chooseAnswers(questions, cards, random = Math.random) {
+        return questions.map(q => {
+            if (q.type === 'text') return cards[Math.floor(random() * cards.length)];
+            if (q.type === 'single') return [q.options[Math.floor(random() * q.options.length)]];
+            const choices = q.options.filter(() => random() < 0.5);
+            return choices.length ? choices : [q.options[Math.floor(random() * q.options.length)]];
         });
+    }
+    function schedule(item, key) {
+        if (!item.dueAt) return;
+        const token = key + ':' + item.id;
+        if (timers.has(token)) return;
+        timers.set(token, setTimeout(() => {
+            timers.delete(token);
+            try {
+                const stored = JSON.parse(localStorage.getItem(key) || '[]');
+                const current = stored.find(x => x.id === item.id);
+                if (!current || !current.dueAt) return;
+                const updated = { ...current, dueAt: null, responses: [...current.responses, { time: new Date().toISOString(), sender: 'partner', answers: chooseAnswers(current.questions, current.cards || []) }] };
+                delete updated.cards;
+                const next = stored.map(x => x.id === updated.id ? updated : x);
+                localStorage.setItem(key, JSON.stringify(next));
+                if (storageKey === key) {
+                    items = next;
+                    if (dialog.open && view === updated.id) results(updated);
+                    else if (dialog.open && view === 'list') list();
+                }
+            } catch { if (storageKey === key && dialog.open) error('回答保存失败，请重新打开问卷重试。'); }
+        }, Math.max(0, item.dueAt - Date.now())));
     }
     function results(item) {
-        frame(`${item.title} · 结果`); dialog.append(el('p', `共 ${item.responses.length} 份回答`, 'survey-muted'));
+        frame(`${item.title} · 对方的回答`); view = item.id; dialog.append(el('p', `${item.partnerName || '对方'}已完成回答`, 'survey-muted'));
         item.questions.forEach((q, index) => {
             const box = el('article'); box.append(el('strong', `${index + 1}. ${q.text}`));
             if (q.type === 'text') item.responses.forEach((r, i) => box.append(el('p', `${i + 1}. ${r.answers[index]}`)));
-            else q.options.forEach(option => { const count = item.responses.filter(r => r.answers[index].includes(option)).length; box.append(el('p', `${option}：${count} 票（${item.responses.length ? Math.round(count / item.responses.length * 100) : 0}%）`)); });
+            else { const answer = item.responses[item.responses.length - 1]?.answers[index] || []; q.options.forEach((option, i) => box.append(el('p', `${answer.includes(option) ? '✓ ' : ''}${String.fromCharCode(65 + i)}. ${option}`, answer.includes(option) ? 'survey-answer' : 'survey-muted'))); }
             if (!item.responses.length) box.append(el('p', '暂无回答', 'survey-muted')); dialog.append(box);
-        }); actions(button('返回列表', list), button('再次填写', () => fill(item), true));
+        }); actions(button('返回列表', list), button('再次邀请', () => invite(item), true));
     }
     trigger.addEventListener('click', () => {
         storageKey = `chuanxun-surveys-v1:${typeof SESSION_ID !== 'undefined' && SESSION_ID ? SESSION_ID : 'default'}`;
@@ -178,7 +221,7 @@
         try {
             const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
             if (!Array.isArray(stored) || stored.some(x => !x || !Array.isArray(x.questions) || !Array.isArray(x.responses))) throw new Error('Invalid survey data');
-            items = stored; list();
+            items = stored; list(); items.forEach(item => schedule(item, storageKey));
         } catch { frame('问卷调查'); error('无法读取已保存的问卷。请检查浏览器存储设置；原有数据未被覆盖。'); }
     });
     dialog.addEventListener('close', () => trigger.focus());
