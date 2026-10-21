@@ -2399,6 +2399,29 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
     let searchTerm = '';
     let isSearchVisible = false;
 
+    // Public adapter for the optional listen-together module.
+    window.musicTogetherBridge = {
+        list: () => songs.map(s => ({title: s.title, url: s.url})),
+        current: () => songs[currentIndex] ? {title: songs[currentIndex].title, url: songs[currentIndex].url} : null,
+        async playUrl(url) {
+            const index = songs.findIndex(s => s.url === url);
+            if (index < 0) { showNotification('歌曲已从歌单移除', 'warning'); return false; }
+            currentIndex = index; loadSong(index);
+            try { await audio.play(); return true; }
+            catch { showNotification('播放失败，请检查歌曲链接或点击播放重试', 'error'); return false; }
+        }
+    };
+    const syncTogetherPlayback = () => {
+        isPlaying = !audio.paused;
+        document.getElementById('icon-play').style.display = isPlaying ? 'none' : 'block';
+        document.getElementById('icon-pause').style.display = isPlaying ? 'block' : 'none';
+        player.classList.toggle('playing', isPlaying);
+    };
+    audio.addEventListener('play', syncTogetherPlayback);
+    audio.addEventListener('pause', syncTogetherPlayback);
+    window.dispatchEvent(new Event('music-together-ready'));
+
+
     function loadSong(index) {
         if (songs.length === 0) return;
         if (index >= songs.length) index = 0;
