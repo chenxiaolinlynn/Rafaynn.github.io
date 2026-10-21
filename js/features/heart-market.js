@@ -729,7 +729,7 @@ window.HeartMarket = (function () {
     }
 
     // v2 packets escrow funds until received; legacy direct transfers are already settled.
-    function transferList() { return (store.get('transfers') || []).map(x => x.version === 2 ? x : {...x,status:'received',side:'out',settled:true}); }
+    function transferList() { return (store.get('transfers') || []).map(x => x.version ? x : {...x,version:1,status:'received',side:'out',settled:true,synced:false}); }
     function transferRandom(side = 'in') {
         const balance = walletGet()[side === 'out' ? 'myBalance' : 'systemBalance'];
         if (balance < 1) return 0;
