@@ -1,7 +1,12 @@
-/* 本地问卷：按当前会话保存，不向服务器发送数据。 */
+/* 本地问卷：按当前会话保存，不向服务器发送数据。
+   2026-10-21 改版：作答引擎移植 mochi 批量问卷逻辑——逐题作答（常规 30 秒一题、首答延迟 15 秒）、
+   提前交卷概率（每节奏点 10%）、多选上限（最多 3 个）、文字题多卡拼接（1–5 条）；
+   新增可选「最晚交卷」期限（到期强制交卷）。旧版 dueAt 数据加载时自动迁移为逐题进度。
+   表单出题 / 历史复用 / 刷新恢复 / 聊天幂等同步等原有机制保持不变。 */
 (() => {
     'use strict';
     const trigger = document.getElementById('survey-btn');
+    if (!trigger) return;
     const dialog = document.createElement('dialog');
     dialog.id = 'survey-dialog';
     dialog.setAttribute('aria-labelledby', 'survey-heading');
@@ -53,10 +58,18 @@
     style.textContent += `
 .survey-chat-card{min-width:160px;max-width:290px;padding:12px 6px;color:inherit}.survey-chat-card small{display:block;letter-spacing:3px;opacity:.65;font-size:10px}.survey-chat-card h3{font-size:20px;margin:14px 0}.survey-chat-question{margin:10px 0;padding:10px;border-radius:12px;background:rgba(128,128,128,.08);white-space:normal;overflow-wrap:anywhere}.survey-chat-status{margin-top:16px;padding-top:12px;border-top:1px solid currentColor;font-size:12px;opacity:.8}
 .message:has(.survey-chat-card){background:var(--secondary-bg)!important;color:var(--text-primary)!important;border:1px solid var(--border-color);border-radius:22px!important}
+#survey-dialog select{display:block;width:100%;margin:8px 0 0;padding:12px 15px;border:1px solid var(--border-color);border-radius:15px;background:var(--primary-bg);color:var(--text-primary);font:inherit;font-size:16px}
 `;
     document.head.append(style);
     let items = [], storageKey = '', view = '';
     const timers = new Map();
+    // ===== 作答引擎参数（移植 mochi 批量问卷逻辑，可按手感调整）=====
+    const SURVEY_FIRST_DELAY = 15000;  // 发出后先"装忙"，15 秒内不开始答
+    const SURVEY_TICK = 30000;         // 常规节奏：每 30 秒答一题
+    const SURVEY_STEP_MIN = 1200;      // 提前交卷/到期收尾时逐题间隔下限（毫秒）
+    const SURVEY_STEP_MAX = 2800;      // 提前交卷/到期收尾时逐题间隔上限（毫秒）
+    const SURVEY_EARLY_PROB = 10;      // 每个节奏点掷一次"提前交卷"的概率（%）
+    const SURVEY_MULTI_MAX = 3;        // 多选最多选几个
     function el(tag, text, cls) {
         const node = document.createElement(tag);
         if (text !== undefined) node.textContent = text;
@@ -90,8 +103,8 @@
         if (!items.length) dialog.append(el('p', '还没有问卷，来创建第一份吧', 'survey-empty'));
         [...items].reverse().forEach(item => {
             const card = el('article', undefined, 'survey-history');
-            const open = button('', () => item.dueAt || !item.responses.length ? pending(item) : results(item)); open.className = 'survey-open';
-            open.append(el('strong', item.title), el('p', `${item.questions.length} 道题 · ${item.dueAt ? '等待对方回答' : item.responses.length ? '已回答' : '待邀请'}`, 'survey-muted'));
+            const open = button('', () => item.progress || !item.responses.length ? pending(item) : results(item)); open.className = 'survey-open';
+            open.append(el('strong', item.title), el('p', `${item.questions.length} 道题 · ${item.progress ? `对方正在回答 ${item.progress.answers.length}/${item.questions.length}` : item.responses.length ? '已回答' : '待邀请'}`, 'survey-muted'));
             const latest = item.responses[item.responses.length - 1];
             if (latest) item.questions.slice(0, 2).forEach((q, index) => {
                 const preview = el('p', `${index + 1}. ${q.text}  `, 'survey-preview');
@@ -114,6 +127,9 @@
         const form = el('form'); dialog.append(form);
         const titleCard = el('div', undefined, 'survey-title-card'); form.append(titleCard);
         const title = field(titleCard, '问卷标题'); title.value = '测一测'; title.required = true; title.maxLength = 100;
+        const cfgCard = el('div', undefined, 'survey-title-card'); form.append(cfgCard);
+        const deadline = field(cfgCard, '最晚交卷（可选，到期自动交卷）', 'select');
+        [['0', '不设期限'], ['1', '1 分钟内'], ['5', '5 分钟内'], ['15', '15 分钟内'], ['60', '60 分钟内']].forEach(([v, t]) => { const o = el('option', t); o.value = v; deadline.append(o); });
         const questionBox = el('div'); form.append(questionBox);
         const rows = [];
         function renumber() { rows.forEach((row, index) => { row.number.textContent = `${index + 1}.`; row.question.setAttribute('aria-label', `第${index + 1}题`); row.remove.hidden = rows.length === 1; }); }
@@ -149,7 +165,7 @@
             event.preventDefault();
             const questions = rows.map(row => ({ text: row.question.value.trim(), type: row.type, options: row.type === 'text' ? [] : row.options.map(x => x.input.value.trim()) }));
             if (!title.value.trim() || !questions.length || questions.some(q => !q.text || (q.type !== 'text' && (q.options.some(x => !x) || new Set(q.options).size !== q.options.length)))) { error('请填写完整内容，选项不能留空或重复。'); return; }
-            const item = { id: crypto.randomUUID(), title: title.value.trim(), questions, responses: [] };
+            const item = { id: crypto.randomUUID(), title: title.value.trim(), questions, responses: [], deadlineMinutes: Number(deadline.value) || 0 };
             invite(item, true);
         });
     }
@@ -164,12 +180,13 @@
         try { if (item.questions.some(q => q.type === 'text')) cards = availableCards(); }
         catch { error('无法读取字卡库，请检查字卡设置。'); return; }
         if (item.questions.some(q => q.type === 'text') && !cards.length) { error('问字卡需要可用的字卡内容，请先添加字卡，或改为单选、多选。'); return; }
+        if (item.progress) { error('对方正在回答这份问卷，等交卷后可再次邀请。'); return; }
         const config = typeof settings !== 'undefined' ? settings : {};
-        const min = Math.max(1000, Math.min(300000, Number(config.replyDelayMin) || 3000));
-        const max = Math.max(min, Math.min(300000, Number(config.replyDelayMax) || 7000));
         if (typeof SESSION_ID === 'undefined' || !SESSION_ID) { error('聊天正在加载，请稍后再邀请。'); return; }
         const chat = { session: SESSION_ID, invitationId: 'survey-invite-' + crypto.randomUUID(), replyId: 'survey-answer-' + crypto.randomUUID(), sentAt: new Date().toISOString() };
-        const next = { ...item, chat, partnerName: config.partnerName || '对方', dueAt: Date.now() + min + Math.floor(Math.random() * (max - min)), cards };
+        const now = Date.now();
+        const next = { ...item, chat, partnerName: config.partnerName || '对方', cards, progress: { answers: [], nextAt: now + SURVEY_FIRST_DELAY, finishing: false, deadlineAt: item.deadlineMinutes ? now + item.deadlineMinutes * 60000 : 0 } };
+        delete next.dueAt;
         if (save(isNew ? [...items, next] : items.map(x => x.id === item.id ? next : x))) {
             const key = storageKey;
             try { await syncChat(next); dialog.close(); }
@@ -179,33 +196,101 @@
     }
     function pending(item) {
         frame(item.title); view = item.id;
-        dialog.append(el('p', item.dueAt ? `${item.partnerName || '对方'}正在回答，完成后会显示答案。` : '问卷已准备好，邀请对方来回答吧。', 'survey-muted'));
+        dialog.append(el('p', item.progress ? `${item.partnerName || '对方'}正在回答 · 已答 ${item.progress.answers.length}/${item.questions.length} 题，交卷后会显示全部答案。` : '问卷已准备好，邀请对方来回答吧。', 'survey-muted'));
         item.questions.forEach((q, index) => {
             const card = el('article'); card.append(el('strong', `${index + 1}. ${q.text}`));
             q.options.forEach((option, i) => card.append(el('p', `${String.fromCharCode(65 + i)}. ${option}`, 'survey-muted'))); dialog.append(card);
         });
         actions(button('返回列表', list));
-        if (!item.dueAt) actions(button('邀请对方回答', () => invite(item), true));
+        if (!item.progress) actions(button('邀请对方回答', () => invite(item), true));
     }
-    function chooseAnswers(questions, cards, random = Math.random) {
-        return questions.map(q => {
-            if (q.type === 'text') return cards[Math.floor(random() * cards.length)];
-            if (q.type === 'single') return [q.options[Math.floor(random() * q.options.length)]];
-            const choices = q.options.filter(() => random() < 0.5);
-            return choices.length ? choices : [q.options[Math.floor(random() * q.options.length)]];
-        });
+    function pickMulti(options, random = Math.random) {
+        // mochi 逻辑：多选有上限（默认最多 3 个），无放回抽 1..上限 个，至少选 1 个
+        const max = Math.max(1, Math.min(SURVEY_MULTI_MAX, options.length));
+        const n = 1 + Math.floor(random() * max);
+        const pool = options.slice(); const out = [];
+        while (out.length < n && pool.length) out.push(pool.splice(Math.floor(random() * pool.length), 1)[0]);
+        return out;
+    }
+    function chooseAnswer(q, cards, random = Math.random) {
+        if (!q) return '';
+        if (q.type === 'text') {
+            // mochi 逻辑：从字卡池无放回抽 1–5 条拼成一句，而不是只抽一整句
+            if (!cards.length) return '……';
+            const pool = cards.slice();
+            const n = 1 + Math.floor(random() * Math.min(5, pool.length));
+            const parts = [];
+            while (parts.length < n && pool.length) parts.push(pool.splice(Math.floor(random() * pool.length), 1)[0]);
+            return parts.join(' ');
+        }
+        if (q.type === 'single') return [q.options[Math.floor(random() * q.options.length)]];
+        return pickMulti(q.options, random);
     }
     function schedule(item, key) {
-        if (!item.dueAt) return;
+        if (!item) return;
+        // 旧版数据迁移：整份一次等待（dueAt）转为逐题进度（progress），按原到期时间给出第一题
+        if (item.dueAt && !item.progress) {
+            try {
+                const stored0 = JSON.parse(localStorage.getItem(key) || '[]');
+                const cur0 = stored0.find(x => x.id === item.id);
+                if (cur0 && cur0.dueAt && !cur0.progress) {
+                    cur0.progress = { answers: [], nextAt: cur0.dueAt, finishing: false, deadlineAt: 0 };
+                    delete cur0.dueAt;
+                    localStorage.setItem(key, JSON.stringify(stored0));
+                    if (storageKey === key) items = stored0;
+                    item = cur0;
+                }
+            } catch { /* 迁移失败则按无进行中处理 */ }
+        }
+        if (!item.progress) return;
         const token = key + ':' + item.id;
         if (timers.has(token)) return;
-        timers.set(token, setTimeout(async () => {
-            timers.delete(token);
+        const step = async () => {
+            // Keep ownership while asynchronous chat persistence is running.
+            timers.set(token, null);
             try {
                 const stored = JSON.parse(localStorage.getItem(key) || '[]');
                 const current = stored.find(x => x.id === item.id);
-                if (!current || !current.dueAt) return;
-                const updated = { ...current, dueAt: null, responses: [...current.responses, { time: new Date().toISOString(), sender: 'partner', chatId: current.chat?.invitationId, answers: chooseAnswers(current.questions, current.cards || []) }] };
+                if (!current || !current.progress) return;
+                const prog = current.progress;
+                const total = current.questions.length;
+                const now = Date.now();
+                const deadlineHit = prog.deadlineAt > 0 && now >= prog.deadlineAt;
+                if (prog.answers.length < total && !deadlineHit && now < (prog.nextAt || 0)) {
+                    // 还没到下一题的时间：睡到下一题或期限（先到者）再醒
+                    let wait = (prog.nextAt || 0) - now;
+                    if (prog.deadlineAt > 0) wait = Math.min(wait, Math.max(0, prog.deadlineAt - now));
+                    timers.set(token, setTimeout(step, Math.max(0, wait)));
+                    return;
+                }
+                // A deadline completes all remaining questions at this wake-up.
+                // Background tabs may wake late; they complete as soon as execution resumes.
+                if (deadlineHit) {
+                    while (prog.answers.length < total) {
+                        prog.answers.push(chooseAnswer(current.questions[prog.answers.length], current.cards || []));
+                    }
+                }
+                if (prog.answers.length < total) {
+                    // mochi 逻辑：每个节奏点掷一次"提前交卷"，中了就进入收尾节奏
+                    if (!prog.finishing && !deadlineHit && Math.random() * 100 < SURVEY_EARLY_PROB) prog.finishing = true;
+                    prog.answers.push(chooseAnswer(current.questions[prog.answers.length], current.cards || []));
+                    if (prog.answers.length < total) {
+                        const gap = (prog.finishing || deadlineHit)
+                            ? SURVEY_STEP_MIN + Math.floor(Math.random() * (SURVEY_STEP_MAX - SURVEY_STEP_MIN))
+                            : SURVEY_TICK;
+                        prog.nextAt = Date.now() + gap;
+                        localStorage.setItem(key, JSON.stringify(stored));
+                        if (storageKey === key) items = stored;
+                        await syncChat(current); // 聊天里的问卷卡同步刷新"已答 n/N"
+                        if (storageKey === key && dialog.open && view === current.id) pending(current);
+                        else if (storageKey === key && dialog.open && view === 'list') list();
+                        const wakeAt = prog.deadlineAt > 0 ? Math.min(prog.nextAt, prog.deadlineAt) : prog.nextAt;
+                        timers.set(token, setTimeout(step, Math.max(0, wakeAt - Date.now())));
+                        return;
+                    }
+                }
+                // 交卷：落一份完整回答，沿用原有幂等同步发答案消息
+                const updated = { ...current, progress: null, responses: [...current.responses, { time: new Date().toISOString(), sender: 'partner', chatId: current.chat?.invitationId, answers: prog.answers.slice() }] };
                 delete updated.cards;
                 const next = stored.map(x => x.id === updated.id ? updated : x);
                 localStorage.setItem(key, JSON.stringify(next));
@@ -216,13 +301,15 @@
                     else if (dialog.open && view === 'list') list();
                 }
             } catch { if (storageKey === key && dialog.open) error('回答保存失败，请重新打开问卷重试。'); }
-        }, Math.max(0, item.dueAt - Date.now())));
+            finally { if (timers.get(token) === null) timers.delete(token); }
+        };
+        timers.set(token, setTimeout(step, 0));
     }
     function invitationMessage(item, answered) {
         const card = el('div', undefined, 'survey-chat-card');
         card.append(el('small', 'QUIZ'), el('h3', item.title));
         item.questions.forEach((q, index) => card.append(el('div', `${index + 1}. ${q.text}`, 'survey-chat-question')));
-        card.append(el('div', answered ? '● 对方已回答' : '○ 等待对方回答', 'survey-chat-status'));
+        card.append(el('div', answered ? '● 对方已回答' : item.progress ? `○ 正在回答 · 已答 ${item.progress.answers.length}/${item.questions.length} 题` : '○ 等待对方回答', 'survey-chat-status'));
         return { id: item.chat.invitationId, sender: 'user', type: 'survey-invitation', text: card.outerHTML, timestamp: new Date(item.chat.sentAt), status: answered ? 'read' : 'sent', favorited: false };
     }
     function answerMessage(item, response) {
