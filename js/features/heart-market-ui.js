@@ -18,7 +18,7 @@
     }
     const toast = text => typeof showNotification === 'function' ? showNotification(text, 'info') : alert(text);
     async function putMessage(html, sender, type, event) {
-        const id = event?.id || 'hm-' + crypto.randomUUID();
+        const id = event?.id || Date.now() * 1000 + Math.floor(Math.random() * 1000);
         if (messages.some(x => String(x.id) === String(id))) return;
         addMessage({ id, sender, type, text: html, timestamp: new Date(), status: sender === 'user' ? 'sent' : 'received', favorited: false });
         renderMessages(true);
@@ -152,6 +152,19 @@
         if ((welcome && welcome.style.display !== 'none') || typeof SESSION_ID === 'undefined' || !SESSION_ID) return;
         lastPartner=[...messages].reverse().find(x=>x.sender!=='user'&&x.type==='normal')?.id||null;
         chatBaselineReady=true;clearInterval(baselineTimer);
+        // One-time cleanup for pre-release string IDs that could not use the site's delete action.
+        setTimeout(async()=>{
+            const key='heart-market-v1:numeric-message-ids';
+            if(localStorage.getItem(key)==='1')return;
+            let changed=false;
+            for(let i=messages.length-1;i>=0;i--){
+                if((messages[i].type==='heart-gift'||messages[i].type==='heart-wish')&&typeof messages[i].id==='string'){
+                    messages.splice(i,1);changed=true;
+                }
+            }
+            if(changed){renderMessages(true);await localforage.setItem(`${APP_PREFIX}${session()}_chatMessages`,messages);}
+            localStorage.setItem(key,'1');
+        },1500);
     },500);
     setInterval(()=>{
         if(!chatBaselineReady)return;
