@@ -533,7 +533,7 @@ window.HeartMarket = (function () {
     function wishMyAdd(g) {
         const a = wishLoad(WL_MY);
         if (a.some(x => x.giftId === g.id)) return false;
-        a.unshift(wishSnap(g)); wishSave(WL_MY, a.slice(0, CFG.wishMax));
+        a.unshift({...wishSnap(g), checkAfter: Date.now()+randInt(3000,8000), initialChecked:false}); wishSave(WL_MY, a.slice(0, CFG.wishMax));
         return true;
     }
     function wishTaRemove(id) { wishSave(WL_TA, wishLoad(WL_TA).filter(x => x.giftId !== id)); }
@@ -667,6 +667,24 @@ window.HeartMarket = (function () {
     const dayCount = prefix => Number(store.get(pKey(prefix + todayKey())) || 0);
     const dayIncr = prefix => store.set(pKey(prefix + todayKey()), dayCount(prefix) + 1);
     function deliverInGift(gift, wish, delayMs) { queueGift(gift, 'in', wish, delayMs); }
+    function purchaseWish(item) {
+        if (!item) return false;
+        const list=wishLoad(WL_MY),fen=toFen(item.price||0);
+        if (!list.some(x=>x.giftId===item.giftId)||walletGet().systemBalance<fen) return false;
+        walletChange(0,-fen,'买下心愿');
+        wishSave(WL_MY,list.filter(x=>x.giftId!==item.giftId));
+        dayIncr('hm-gift-daily-');
+        deliverInGift({...item,id:item.giftId},item.wish,randInt(CFG.deliverMinMs,CFG.deliverMaxMs));
+        return true;
+    }
+    function checkPendingWishes() {
+        if (!host.ready()||host.isNight()||host.rateLimitFull()||!CFG.wlOn||!CFG.giftInOn||dayCount('hm-gift-daily-')>=CFG.autoDayMax) return;
+        const list=wishLoad(WL_MY),item=list.find(x=>x.initialChecked===false&&x.checkAfter<=Date.now());
+        if (!item) return;
+        item.initialChecked=true;
+        wishSave(WL_MY,list);
+        if (Math.random()*100<CFG.wlBuyPct) purchaseWish(item);
+    }
     // 宿主在每轮聊天活动结束后调用一次（先过夜间/限流两道总闸，再按顺序掷四把骰子）
     function autoTick() {
         if (host.isNight() || host.rateLimitFull()) return;
@@ -678,15 +696,8 @@ window.HeartMarket = (function () {
         if (CFG.wlOn && CFG.giftInOn && !autoCapped) {
             const myWl = wishLoad(WL_MY);
             if (myWl.length && Math.random() * 100 < CFG.wlBuyPct) {
-                const item = pick(myWl);
-                const w = walletGet(); const fen = toFen(item.price || 0);
-                if (w.systemBalance >= fen) {
-                    walletChange(0, -fen, '买下心愿');
-                    wishSave(WL_MY, myWl.filter(x => x.giftId !== item.giftId));
-                    dayIncr('hm-gift-daily-');
-                    deliverInGift(Object.assign({}, item, { id: item.giftId }), item.wish, randInt(CFG.deliverMinMs, CFG.deliverMaxMs));
-                    return;
-                }
+                const affordable=myWl.filter(item=>toFen(item.price||0)<=walletGet().systemBalance);
+                if (purchaseWish(pick(affordable))) return;
             }
         }
         // 2) TA 给自己买（10%）
@@ -817,7 +828,7 @@ window.HeartMarket = (function () {
             restore: mutate(() => store.set('market-off', [])),
             custom: () => store.get(CUSTOM_KEY) || [] },
         wish: {
-            myList: () => wishLoad(WL_MY), myAdd: mutate(wishMyAdd), myRemove: mutate(wishMyRemove),
+            checkPending: mutate(checkPendingWishes), myList: () => wishLoad(WL_MY), myAdd: mutate(wishMyAdd), myRemove: mutate(wishMyRemove),
             taList: () => wishLoad(WL_TA), taRemove: mutate(wishTaRemove), taHas: wishTaHas,
             unread: () => wishLoad(WL_TA).filter(x => x.tm > (store.get(pKey('wish-read')) || 0)).length,
             read: mutate(() => store.set(pKey('wish-read'), Date.now()))
