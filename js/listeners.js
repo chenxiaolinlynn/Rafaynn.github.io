@@ -2399,6 +2399,78 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
     let searchTerm = '';
     let isSearchVisible = false;
 
+    // Diagnostic results are session-only: network failures are not permanent removals.
+    const sourceHealth = new Map();
+    let scanRunning = false;
+    let scanCancelled = false;
+    let scanDone = 0;
+    let scanTotal = 0;
+    const healthLabels = {ready: '可加载', error: '加载失败，可重试', timeout: '连接超时，待重试'};
+    function refreshSourceStatus() {
+        playlist.querySelectorAll('[data-source-index]').forEach(el => {
+            const song = songs[Number(el.dataset.sourceIndex)];
+            el.textContent = song ? (healthLabels[sourceHealth.get(song.url)] || '') : '';
+        });
+        const button = playlist.querySelector('#pl-check-btn');
+        if (button) {
+            button.textContent = scanRunning ? '停止检测 ' + scanDone + '/' + scanTotal : '检测音源';
+            button.title = '检测能否加载音频信息；不代表整首歌曲播放无误';
+        }
+    }
+    function probeSource(url) {
+        return new Promise(resolve => {
+            const probe = new Audio();
+            let settled = false;
+            const finish = status => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                probe.onloadedmetadata = probe.onerror = null;
+                probe.removeAttribute('src');
+                probe.load();
+                resolve(status);
+            };
+            const timer = setTimeout(() => finish('timeout'), 8000);
+            probe.preload = 'metadata';
+            probe.onloadedmetadata = () => finish('ready');
+            probe.onerror = () => finish('error');
+            probe.src = url;
+            probe.load();
+        });
+    }
+    async function checkSources() {
+        if (scanRunning) { scanCancelled = true; return; }
+        scanRunning = true;
+        scanCancelled = false;
+        scanDone = 0;
+        const urls = [...new Set(songs.map(song => song.url).filter(Boolean))];
+        scanTotal = urls.length;
+        let cursor = 0;
+        refreshSourceStatus();
+        await Promise.all(Array.from({length: 3}, async () => {
+            while (!scanCancelled && cursor < urls.length) {
+                const url = urls[cursor++];
+                sourceHealth.set(url, await probeSource(url));
+                scanDone++;
+                refreshSourceStatus();
+            }
+        }));
+        scanRunning = false;
+        refreshSourceStatus();
+        showNotification(scanCancelled ? '检测已停止，已完成的结果保留' : '检测完成：失败或超时可稍后重试，也可点铅笔替换链接', 'info');
+    }
+    audio.addEventListener('loadedmetadata', () => {
+        if (songs[currentIndex]) sourceHealth.set(songs[currentIndex].url, 'ready');
+        refreshSourceStatus();
+    });
+    audio.addEventListener('error', () => {
+        if (!songs[currentIndex]) return;
+        sourceHealth.set(songs[currentIndex].url, 'error');
+        syncTogetherPlayback();
+        refreshSourceStatus();
+        showNotification('当前音源加载失败，可在歌单点铅笔替换链接，或切换下一首', 'warning');
+    });
+
     // Public adapter for the optional listen-together module.
     window.musicTogetherBridge = {
         cycleMode: () => document.getElementById('mode-btn').click(),
@@ -2519,6 +2591,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
         header.innerHTML = `
     <div class="pl-header-title">˙°ʚᕱ⑅ᕱɞ°˙</div>
     <div class="pl-header-actions">
+        <button class="pl-icon-btn" id="pl-check-btn" style="width:auto;padding:0 8px;font-size:12px">检测音源</button>
         <button class="pl-icon-btn" id="pl-manage-btn" title="歌单管理"><i class="fas fa-folder-open"></i></button>
         <button class="pl-icon-btn ${isSearchVisible ? 'active' : ''}" id="pl-search-toggle" title="搜索"><i class="fas fa-search"></i></button>
         <button class="pl-icon-btn" id="pl-add-btn" title="添加歌曲"><i class="fas fa-plus"></i></button>
@@ -2526,6 +2599,11 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
     <input type="file" id="pl-import-input" accept=".json" style="display:none">
 `;
         playlist.appendChild(header);
+        header.querySelector('#pl-check-btn').addEventListener('click', event => {
+            event.stopPropagation();
+            checkSources();
+        });
+        refreshSourceStatus();
 
         const searchWrapper = document.createElement('div');
         searchWrapper.className = `playlist-search-wrapper ${isSearchVisible ? 'active' : ''}`;
@@ -2683,19 +2761,18 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
                 <div class="song-info">
                     <div class="song-title-row">${displayTitle}</div>
                     <div class="song-sub-row">${displaySub}</div>
+                    <div class="song-sub-row" data-source-index="${realIndex}"></div>
                 </div>
                 <div class="item-actions">
-                    ${song.isCustom ? '<span class="custom-tag" title="自定义歌曲"></span>' : ''}
+                    <button class="action-icon-btn edit-source" title="编辑歌曲和音源" aria-label="编辑歌曲和音源"><i class="fas fa-pen"></i></button>
                     <span class="action-icon-btn delete" title="移除">&times;</span>
                 </div>
             `;
 
-            if (song.isCustom) {
-                div.querySelector('.custom-tag').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openEditModal(realIndex);
-                });
-            }
+            div.querySelector('.edit-source').addEventListener('click', e => {
+                e.stopPropagation();
+                openEditModal(realIndex);
+            });
 
             div.querySelector('.delete').addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -2727,6 +2804,8 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
                 else audio.play();
             });
 
+            const status = div.querySelector('[data-source-index]');
+            status.textContent = healthLabels[sourceHealth.get(song.url)] || '';
             container.appendChild(div);
         });
     }
