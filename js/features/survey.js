@@ -50,6 +50,10 @@
 #survey-dialog .survey-empty{text-align:center;color:var(--text-secondary);padding:45px 12px;font-size:14px}
 @media(max-width:600px){#survey-dialog{width:100%;height:100dvh;max-height:100dvh;max-width:100%;border:0;border-radius:0;padding:0 18px max(24px,env(safe-area-inset-bottom))}#survey-dialog header{margin:0 -18px 20px;padding-top:max(14px,env(safe-area-inset-top))}#survey-dialog article,#survey-dialog fieldset,#survey-dialog .survey-title-card{padding:18px}#survey-dialog .survey-history{padding:0}}
 `;
+    style.textContent += `
+.survey-chat-card{min-width:160px;max-width:290px;padding:12px 6px;color:inherit}.survey-chat-card small{display:block;letter-spacing:3px;opacity:.65;font-size:10px}.survey-chat-card h3{font-size:20px;margin:14px 0}.survey-chat-question{margin:10px 0;padding:10px;border-radius:12px;background:rgba(128,128,128,.08);white-space:normal;overflow-wrap:anywhere}.survey-chat-status{margin-top:16px;padding-top:12px;border-top:1px solid currentColor;font-size:12px;opacity:.8}
+.message:has(.survey-chat-card){background:var(--secondary-bg)!important;color:var(--text-primary)!important;border:1px solid var(--border-color);border-radius:22px!important}
+`;
     document.head.append(style);
     let items = [], storageKey = '', view = '';
     const timers = new Map();
@@ -155,7 +159,7 @@
         (window.customReplyGroups || []).filter(g => g.disabled).forEach(g => (g.items || []).forEach(x => disabled.add(x)));
         return all.filter(x => !disabled.has(x)).map(String).map(x => x.trim()).filter(Boolean);
     }
-    function invite(item, isNew = false) {
+    async function invite(item, isNew = false) {
         let cards = [];
         try { if (item.questions.some(q => q.type === 'text')) cards = availableCards(); }
         catch { error('无法读取字卡库，请检查字卡设置。'); return; }
@@ -163,8 +167,15 @@
         const config = typeof settings !== 'undefined' ? settings : {};
         const min = Math.max(1000, Math.min(300000, Number(config.replyDelayMin) || 3000));
         const max = Math.max(min, Math.min(300000, Number(config.replyDelayMax) || 7000));
-        const next = { ...item, partnerName: config.partnerName || '对方', dueAt: Date.now() + min + Math.floor(Math.random() * (max - min)), cards };
-        if (save(isNew ? [...items, next] : items.map(x => x.id === item.id ? next : x))) { schedule(next, storageKey); pending(next); }
+        if (typeof SESSION_ID === 'undefined' || !SESSION_ID) { error('聊天正在加载，请稍后再邀请。'); return; }
+        const chat = { session: SESSION_ID, invitationId: 'survey-invite-' + crypto.randomUUID(), replyId: 'survey-answer-' + crypto.randomUUID(), sentAt: new Date().toISOString() };
+        const next = { ...item, chat, partnerName: config.partnerName || '对方', dueAt: Date.now() + min + Math.floor(Math.random() * (max - min)), cards };
+        if (save(isNew ? [...items, next] : items.map(x => x.id === item.id ? next : x))) {
+            const key = storageKey;
+            try { await syncChat(next); dialog.close(); }
+            catch { error('问卷已保存，但聊天消息保存失败，重新打开问卷可重试。'); }
+            schedule(next, key);
+        }
     }
     function pending(item) {
         frame(item.title); view = item.id;
@@ -188,16 +199,17 @@
         if (!item.dueAt) return;
         const token = key + ':' + item.id;
         if (timers.has(token)) return;
-        timers.set(token, setTimeout(() => {
+        timers.set(token, setTimeout(async () => {
             timers.delete(token);
             try {
                 const stored = JSON.parse(localStorage.getItem(key) || '[]');
                 const current = stored.find(x => x.id === item.id);
                 if (!current || !current.dueAt) return;
-                const updated = { ...current, dueAt: null, responses: [...current.responses, { time: new Date().toISOString(), sender: 'partner', answers: chooseAnswers(current.questions, current.cards || []) }] };
+                const updated = { ...current, dueAt: null, responses: [...current.responses, { time: new Date().toISOString(), sender: 'partner', chatId: current.chat?.invitationId, answers: chooseAnswers(current.questions, current.cards || []) }] };
                 delete updated.cards;
                 const next = stored.map(x => x.id === updated.id ? updated : x);
                 localStorage.setItem(key, JSON.stringify(next));
+                await syncChat(updated);
                 if (storageKey === key) {
                     items = next;
                     if (dialog.open && view === updated.id) results(updated);
@@ -206,6 +218,65 @@
             } catch { if (storageKey === key && dialog.open) error('回答保存失败，请重新打开问卷重试。'); }
         }, Math.max(0, item.dueAt - Date.now())));
     }
+    function invitationMessage(item, answered) {
+        const card = el('div', undefined, 'survey-chat-card');
+        card.append(el('small', 'QUIZ'), el('h3', item.title));
+        item.questions.forEach((q, index) => card.append(el('div', `${index + 1}. ${q.text}`, 'survey-chat-question')));
+        card.append(el('div', answered ? '● 对方已回答' : '○ 等待对方回答', 'survey-chat-status'));
+        return { id: item.chat.invitationId, sender: 'user', type: 'survey-invitation', text: card.outerHTML, timestamp: new Date(item.chat.sentAt), status: answered ? 'read' : 'sent', favorited: false };
+    }
+    function answerMessage(item, response) {
+        // Existing chat renderer accepts HTML: encode user content before passing it in.
+        const text = response.answers.map((answer, index) => `${index + 1}. ${Array.isArray(answer) ? answer.join('、') : answer}`).join('\n');
+        const safe = el('div', text);
+        return { id: item.chat.replyId, sender: 'partner', type: 'survey-answer', text: safe.innerHTML, timestamp: new Date(response.time), status: 'received', favorited: false };
+    }
+    async function syncChat(item) {
+        if (!item.chat) return;
+        const response = item.responses.find(r => r.chatId === item.chat.invitationId);
+        if (item.chat.completed) return;
+        const invitation = invitationMessage(item, !!response);
+        const targetKey = `${APP_PREFIX}${item.chat.session}_chatMessages`;
+        if (typeof SESSION_ID !== 'undefined' && SESSION_ID === item.chat.session) {
+            const previous = messages.find(m => m.id === invitation.id);
+            if (previous) { previous.text = invitation.text; previous.status = invitation.status; }
+            else if (!item.chat.invitationSent) addMessage(invitation);
+            if (response && !messages.some(m => m.id === item.chat.replyId)) addMessage(answerMessage(item, response));
+            renderMessages(true);
+            await localforage.setItem(targetKey, messages);
+        } else {
+            const saved = await localforage.getItem(targetKey) || [];
+            const previous = saved.find(m => m.id === invitation.id);
+            if (previous) Object.assign(previous, invitation);
+            else if (!item.chat.invitationSent) saved.push(invitation);
+            if (response && !saved.some(m => m.id === item.chat.replyId)) saved.push(answerMessage(item, response));
+            await localforage.setItem(targetKey, saved);
+        }
+        item.chat.invitationSent = true;
+        if (response) item.chat.completed = true;
+        const key = `chuanxun-surveys-v1:${item.chat.session}`;
+        const stored = JSON.parse(localStorage.getItem(key) || '[]');
+        const latest = stored.find(x => x.id === item.id);
+        if (latest?.chat?.invitationId === item.chat.invitationId) {
+            latest.chat = item.chat; localStorage.setItem(key, JSON.stringify(stored));
+        }
+    }
+    async function restoreChats() {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key?.startsWith('chuanxun-surveys-v1:')) continue;
+            try {
+                const records = JSON.parse(localStorage.getItem(key) || '[]');
+                for (const item of records) { await syncChat(item); schedule(item, key); }
+            } catch (e) { console.warn('恢复问卷消息失败', e); }
+        }
+    }
+    // Resume unfinished invitations after normal chat data has finished loading.
+    const resumeTimer = setInterval(() => {
+        const welcome = document.getElementById('welcome-animation');
+        if (typeof SESSION_ID === 'undefined' || !SESSION_ID || (welcome && welcome.style.display !== 'none')) return;
+        clearInterval(resumeTimer); restoreChats();
+    }, 1000);
     function results(item) {
         frame(`${item.title} · 对方的回答`); view = item.id; dialog.append(el('p', `${item.partnerName || '对方'}已完成回答`, 'survey-muted'));
         item.questions.forEach((q, index) => {
@@ -221,7 +292,7 @@
         try {
             const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
             if (!Array.isArray(stored) || stored.some(x => !x || !Array.isArray(x.questions) || !Array.isArray(x.responses))) throw new Error('Invalid survey data');
-            items = stored; list(); items.forEach(item => schedule(item, storageKey));
+            items = stored; list(); items.forEach(item => { syncChat(item).catch(e => console.warn('问卷消息保存失败', e)); schedule(item, storageKey); });
         } catch { frame('问卷调查'); error('无法读取已保存的问卷。请检查浏览器存储设置；原有数据未被覆盖。'); }
     });
     dialog.addEventListener('close', () => trigger.focus());
