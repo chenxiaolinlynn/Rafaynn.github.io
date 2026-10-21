@@ -25,7 +25,7 @@
     let lastRequest = 0, requestSession = null, lastPauseVersion = -1;
     const historyKey = () => KEY + '_events_' + currentSession();
     const say = (text, system = false) => addMessage({id:Date.now()+Math.random(), sender:system?'system':identity().partner,
-        type:system?'system':'normal', text:String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])), timestamp:new Date(), status:'received', musicInteraction:true});
+        type:system?'system':'normal', text:String(text).replace(/。/g,'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])), timestamp:new Date(), status:'received', musicInteraction:true});
     function log(text) {
         say(text, true);
         const event = {at:Date.now(), text};
@@ -152,9 +152,9 @@
             if (state?.id!==id || state.session!==currentSession()) return;
             const roll=Math.random()*100, alternatives=api().list().filter(t=>t.url!==track.url);
             if (roll < config.accept || (roll >= config.accept+config.refuse && !alternatives.length)) {
-                say(pick(['一起听呀。','放吧，我靠近一点。'])); begin(track);
+                begin(track);
             } else if (roll < config.accept+config.refuse) {
-                say(pick(['这首现在不想听嘛。','待会儿再听好不好？']));
+                say(pick(['这首现在不想听嘛','待会儿再听好不好？']));
                 log(identity().partner+'这次没答应'); state=null; persist(); render();
             } else {
                 say('这首听腻啦，换一首嘛～'); state=null; persist(); render(); offer(pick(alternatives));
@@ -229,7 +229,7 @@
         const version=trackVersion, id=state.id;
         pauseTimer=setTimeout(() => {
             if (!active() || state.id!==id || version!==trackVersion || audio.paused || audio.ended) return;
-            audio.pause(); say(String(pick(cards()) || '宝宝，陪我说句话再继续听。'));
+            audio.pause(); say(String(pick(cards()) || '宝宝，陪我说句话再继续听'));
             resumeTimer=setTimeout(() => {
                 if (active() && state.id===id && version===trackVersion && audio.paused) audio.play().catch(()=>showNotification('点击播放继续听歌','info'));
             },3500);
