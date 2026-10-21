@@ -699,7 +699,7 @@ html:not([data-theme="dark"])[data-color-theme="black-white"] .message-sent{
         if (!S.enabled) return;
         const ms = (15 + Math.random() * 45) * 60 * 1000;
         S.randomCallTimer = setTimeout(() => {
-            if (S.enabled && !S.active && Math.random() < 0.25) showIncomingCall();
+            if (S.enabled && !S.active && Math.random() < 0.20) showIncomingCall();
             scheduleRandomCall();
         }, ms);
     }
