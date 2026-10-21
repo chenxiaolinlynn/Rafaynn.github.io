@@ -1249,6 +1249,7 @@ const addMessage = (message) => {
     });
 
     throttledSaveData();
+    window.dispatchEvent(new CustomEvent('chat-message-added', {detail:message}));
 };
 
         window._addCallEvent = (icon, label, detail) => {
