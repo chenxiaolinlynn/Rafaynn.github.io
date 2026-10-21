@@ -52,7 +52,7 @@
 
     const style = document.createElement('style');
     style.textContent = `
-#heart-market-btn{position:relative;background:var(--toolbar-btn-bg,var(--message-received-bg));color:var(--toolbar-btn-color,var(--text-secondary))}
+#heart-market-btn{position:relative}
 #hm-dialog{box-sizing:border-box;width:min(720px,calc(100% - 28px));height:min(820px,92dvh);max-height:92dvh;margin:auto;padding:0;border:1px solid var(--border-color);border-radius:24px;background:var(--primary-bg);color:var(--text-primary);font:inherit;overflow:hidden}
 #hm-dialog::backdrop{background:rgba(0,0,0,.38);backdrop-filter:blur(3px)}#hm-dialog *{box-sizing:border-box}#hm-dialog button,#hm-dialog input,#hm-dialog textarea,#hm-dialog select{font:inherit}
 #hm-dialog header{padding:16px 20px 10px;background:var(--secondary-bg);border-bottom:1px solid var(--border-color)}.hm-head{display:flex;align-items:center;justify-content:space-between}.hm-head h2{margin:0;font-size:19px}.hm-close{border:0;background:transparent;color:var(--text-secondary);font-size:25px;cursor:pointer}
@@ -66,8 +66,8 @@
 `;
     document.head.append(style);
     const dialog = document.createElement('dialog');
-    dialog.id = 'hm-dialog'; dialog.setAttribute('aria-label', '心意市集');
-    dialog.innerHTML = '<header><div class="hm-head"><h2>心意市集</h2><button class="hm-close" aria-label="关闭">×</button></div><div class="hm-wallet"></div></header><nav class="hm-tabs"></nav><main class="hm-body"></main>';
+    dialog.id = 'hm-dialog'; dialog.setAttribute('aria-label', '心愿市集');
+    dialog.innerHTML = '<header><div class="hm-head"><h2>心愿市集</h2><button class="hm-close" aria-label="关闭">×</button></div><div class="hm-wallet"></div></header><nav class="hm-tabs"></nav><main class="hm-body"></main>';
     document.body.append(dialog);
     const body = dialog.querySelector('.hm-body'), wallet = dialog.querySelector('.hm-wallet'), tabs = dialog.querySelector('.hm-tabs');
     dialog.querySelector('.hm-close').onclick = () => dialog.close();
@@ -144,7 +144,9 @@
         body.innerHTML=`<form class="hm-form"><h3>自动互动设置</h3>${switches.map(([k,n])=>`<label><input name="${k}" type="checkbox" ${c[k]?'checked':''}> ${n}</label>`).join('')}${fields.map(([k,n])=>`<label>${n}<input class="hm-field" name="${k}" type="number" min="0" max="100" value="${c[k]}"></label>`).join('')}<label>送礼回复方式<select class="hm-field" name="giftReplyMode"><option value="0" ${c.giftReplyMode===0?'selected':''}>系统预设话术</option><option value="1" ${c.giftReplyMode===1?'selected':''}>像正常聊天一样回复</option><option value="2" ${c.giftReplyMode===2?'selected':''}>混合</option></select></label><button class="hm-action">保存设置</button></form>`;
         const form=body.querySelector('form');form.onsubmit=e=>{e.preventDefault();const next={giftReplyMode:form.giftReplyMode.value};switches.forEach(([k])=>next[k]=form[k].checked);fields.forEach(([k])=>next[k]=form[k].value);H.settings.save(next);toast('设置已保存');render('settings');};
     }
-    trigger.onclick=()=>{render('market');dialog.showModal();};dialog.addEventListener('close',()=>trigger.focus());
+    trigger.onclick=()=>{render('market');dialog.showModal();};
+    trigger.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();trigger.click();}};
+    dialog.addEventListener('close',()=>trigger.focus());
     badge();H.flush();setInterval(()=>H.flush(),1000);
     let lastPartner=null, autoTimer=null, chatBaselineReady=false;
     const baselineTimer=setInterval(()=>{
