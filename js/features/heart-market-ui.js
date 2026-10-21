@@ -28,6 +28,39 @@
         const who = g.giftSelf ? `${partner()}送给自己` : g.side === 'out' ? `${mine()}送给${partner()}` : `${partner()}送给${mine()}`;
         return `<div class="hm-chat-card"><small>GIFT</small><div class="hm-chat-media">${g.giftImg ? `<img src="${esc(g.giftImg)}" alt="">` : esc(g.giftEmoji || '🎁')}</div><strong>${esc(g.giftName)}</strong><p>${esc(g.giftWish || '')}</p><span>${esc(who)} · ¥${Number(g.giftPrice || 0).toFixed(2)}</span></div>`;
     }
+    let syncingClaims = false;
+    async function syncGiftClaims() {
+        const welcome=document.getElementById('welcome-animation');
+        if(syncingClaims || !session() || (welcome && welcome.style.display!=='none'))return;
+        syncingClaims=true;
+        try {
+            let changed=false;
+            for(const gift of H.box.list().filter(x=>x.side==='in')) {
+                const msg=messages.find(m=>String(m.id)===String(gift.messageId));
+                if(!msg || msg.type!=='heart-gift')continue;
+                const holder=document.createElement('div');holder.innerHTML=msg.text;
+                const card=holder.querySelector('.hm-chat-card');if(!card)continue;
+                const old=card.querySelector('.hm-claim-action');
+                const status=gift.claimed?'claimed':'pending';
+                if(old?.dataset.status===status)continue;
+                old?.remove();
+                const control=document.createElement(gift.claimed?'span':'button');
+                control.className='hm-claim-action';control.dataset.status=status;
+                control.textContent=gift.claimed?'已领取':'领取礼物';
+                if(!gift.claimed){control.type='button';control.dataset.claimGift=gift.id;}
+                card.append(control);msg.text=holder.innerHTML;changed=true;
+            }
+            if(changed){renderMessages(true);await localforage.setItem(`${APP_PREFIX}${session()}_chatMessages`,messages);}
+        } finally {syncingClaims=false;}
+    }
+    document.addEventListener('click',async e=>{
+        const b=e.target.closest('[data-claim-gift]');if(!b)return;
+        e.stopPropagation();b.disabled=true;
+        try{if(H.box.claim(b.dataset.claimGift)){await syncGiftClaims();toast('礼物已领取，已收进心意柜');}else toast('礼物暂时无法领取');}
+        catch(err){toast(err.message||'领取失败，请重试');}
+        finally{b.disabled=false;}
+    });
+    setInterval(()=>syncGiftClaims().catch(()=>{}),1000);
     function wishCard(g) {
         return `<div class="hm-chat-card"><small>WISH</small><div class="hm-chat-media">${g.wishGiftImg ? `<img src="${esc(g.wishGiftImg)}" alt="">` : esc(g.wishGiftEmoji || '☆')}</div><strong>${esc(g.wishGiftName)}</strong><p>${esc(g.wishGiftWish || '')}</p><span>${esc(partner())}加入了心愿单 · ¥${Number(g.wishGiftPrice || 0).toFixed(2)}</span></div>`;
     }
@@ -61,7 +94,7 @@
 .hm-action{border:0;border-radius:12px;padding:10px 14px;background:var(--accent-color);color:var(--message-sent-text);cursor:pointer}.hm-secondary{background:var(--secondary-bg);color:var(--text-primary);border:1px solid var(--border-color)}
 .hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:12px}.hm-good{position:relative;text-align:left;border:1px solid var(--border-color);border-radius:18px;padding:16px;background:var(--secondary-bg);color:var(--text-primary);min-height:148px;cursor:pointer}.hm-good:hover{border-color:var(--accent-color)}.hm-media{display:flex;align-items:center;justify-content:center;height:54px;font-size:38px}.hm-media img{width:54px;height:54px;border-radius:14px;object-fit:cover}.hm-good strong{display:block;margin-top:8px}.hm-good small{display:block;color:var(--text-secondary);margin-top:4px}.hm-price{color:var(--accent-color);margin-top:5px}
 .hm-list{display:grid;gap:10px}.hm-row{display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:14px;border:1px solid var(--border-color);border-radius:16px;background:var(--secondary-bg)}.hm-row .hm-media{height:44px;font-size:30px}.hm-row p{margin:3px 0;color:var(--text-secondary);font-size:13px;white-space:pre-wrap}.hm-row-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.hm-empty{text-align:center;color:var(--text-secondary);padding:50px 10px}.hm-form{display:grid;gap:12px}.hm-form label{display:grid;gap:6px;color:var(--text-secondary);font-size:13px}.hm-form input,.hm-form textarea,.hm-form select{width:100%}.hm-section{margin:20px 0 10px;color:var(--text-secondary);font-size:14px}.hm-badge{position:absolute;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--accent-color);color:#fff;font-size:10px;line-height:16px;transform:translate(8px,-10px)}
-.hm-chat-card{min-width:190px;max-width:270px;padding:10px 5px;text-align:center;color:inherit}.hm-chat-card small{display:block;letter-spacing:3px;opacity:.6;font-size:10px}.hm-chat-media{font-size:46px;margin:12px 0}.hm-chat-media img{width:70px;height:70px;border-radius:16px;object-fit:cover}.hm-chat-card strong{display:block;font-size:18px}.hm-chat-card p{white-space:pre-wrap;margin:8px 0}.hm-chat-card span{font-size:12px;opacity:.7}.message:has(.hm-chat-card){background:var(--secondary-bg)!important;color:var(--text-primary)!important;border:1px solid var(--border-color);border-radius:22px!important}
+.hm-chat-card{min-width:190px;max-width:270px;padding:10px 5px;text-align:center;color:inherit}.hm-claim-action{display:block;margin:14px auto 0;padding:9px 20px;border:0;border-radius:12px;background:var(--accent-color);color:var(--message-sent-text);font:inherit;cursor:pointer}.hm-claim-action[data-status=claimed]{background:transparent;color:var(--text-secondary);cursor:default}.hm-chat-card small{display:block;letter-spacing:3px;opacity:.6;font-size:10px}.hm-chat-media{font-size:46px;margin:12px 0}.hm-chat-media img{width:70px;height:70px;border-radius:16px;object-fit:cover}.hm-chat-card strong{display:block;font-size:18px}.hm-chat-card p{white-space:pre-wrap;margin:8px 0}.hm-chat-card span{font-size:12px;opacity:.7}.message:has(.hm-chat-card){background:var(--secondary-bg)!important;color:var(--text-primary)!important;border:1px solid var(--border-color);border-radius:22px!important}
 @media(max-width:600px){#hm-dialog{width:100%;height:100dvh;max-height:100dvh;border:0;border-radius:0}.hm-body{padding:14px}.hm-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hm-row{grid-template-columns:42px 1fr}.hm-row-actions{grid-column:1/-1}.hm-tabs button{flex:0 0 auto}}
 `;
     document.head.append(style);
