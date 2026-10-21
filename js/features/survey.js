@@ -119,7 +119,7 @@
             head.append(number, question, remove); box.append(head);
             const types = el('div', undefined, 'survey-types'), optionsBox = el('div');
             const hint = el('p', '填写时可自由输入文字回答', 'survey-muted'); hint.hidden = true;
-            [['single','单选'],['multiple','多选'],['text','文字']].forEach(([value, text]) => {
+            [['single','单选'],['multiple','多选'],['text','问字卡']].forEach(([value, text]) => {
                 const tab = button(text, () => { row.type = value; optionsBox.hidden = value === 'text'; hint.hidden = value !== 'text'; row.options.forEach(x => x.input.required = value !== 'text'); [...types.children].forEach(node => node.setAttribute('aria-pressed', String(node === tab))); });
                 tab.className = 'survey-type'; tab.setAttribute('aria-pressed', String(value === row.type)); types.append(tab);
             });
