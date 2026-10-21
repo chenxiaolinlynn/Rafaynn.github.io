@@ -765,7 +765,7 @@ window.HeartMarket = (function () {
         tx.feedbackId=tx.id+1;tx.replyId=tx.id+2;
         if(tx.side==='out' && status==='received' && Math.random()*100<CFG.rpReplyPct){
             const chat = CFG.rpReplyMode===1 || (CFG.rpReplyMode===2 && Math.random()<.4);
-            tx.replyText = String((chat ? pick(host.getCardPool()) : null) || pick(['收到你的心意啦，谢谢宝宝。','红包收下啦，想抱抱宝宝。','谢谢宝宝，今天也被你惦记着。']));
+            tx.replyText = String((chat ? pick(host.getCardPool()) : null) || pick(['收到你的心意啦，谢谢宝宝。','红包收下啦，想抱抱宝宝。','谢谢宝宝，今天也被你惦记着。','爱你宝宝','想你了宝宝！','亲亲宝宝']));
         }
         store.set('transfers',list);return tx;
     }
