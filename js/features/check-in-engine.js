@@ -24,11 +24,12 @@ function create({storage,key,now=Date.now,random=Math.random,id=()=>String(now()
  function draw(away=false,recent=[]) {
   let pool=data.questions.filter(q=>q.enabled&&q.text.trim()&&q.id!==data.lastQuestion);
   // With only one enabled question, wait rather than repeat it immediately.
-  if(away)pool=pool.filter(q=>![...recent,...data.records.filter(r=>now()-r.at<3600000).map(r=>r.question.text)].some(t=>similar(t,q.text)));
-  return pick(pool);
+  const chosen=pick(pool);
+  if(away&&chosen&&[...recent,...data.records.filter(r=>now()-r.at<3600000).map(r=>r.question.text)].some(t=>similar(t,chosen.text)))return null;
+  return chosen;
  }
- function issue({away=false,force=false,recent=[]}={}) {
-  clean();const c=data.config,[chance,minutes]=frequencies[c.frequency]||frequencies.quiet;
+ function issue({away=false,force=false,recent=[],frequency=data.config.frequency}={}) {
+  clean();const c=data.config,[chance,minutes]=frequencies[frequency]||frequencies.quiet;
   if(pending()||!c.enabled||away&&!c.away)return null;
   if(!force&&(now()-(away?Math.max(data.lastAway,data.lastAt):data.lastAt)<(away?minutes:c.cooldown)*60000||random()*100>=(away?chance:c.chance)))return null;
   const question=draw(away,recent);if(!question)return null;
