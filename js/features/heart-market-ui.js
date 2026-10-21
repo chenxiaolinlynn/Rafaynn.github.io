@@ -4,7 +4,8 @@
     const trigger = document.getElementById('heart-market-btn');
     if (!trigger || !window.HeartMarket) return;
     // Temporary verification cleanup; removed after the live test tab is reset.
-    if (new URLSearchParams(location.search).get('market-test') === 'reset') localStorage.removeItem('heart-market-v1:state');
+    const verificationReset = new URLSearchParams(location.search).get('market-test') === 'reset';
+    if (verificationReset) localStorage.removeItem('heart-market-v1:state');
     const H = window.HeartMarket;
     const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = fen => '¥' + (Number(fen || 0) / 100).toFixed(2);
@@ -152,6 +153,11 @@
     const baselineTimer=setInterval(()=>{
         const welcome=document.getElementById('welcome-animation');
         if ((welcome && welcome.style.display !== 'none') || typeof SESSION_ID === 'undefined' || !SESSION_ID) return;
+        if (verificationReset) {
+            for (let i=messages.length-1;i>=0;i--) if (String(messages[i].id).startsWith('hm-')) messages.splice(i,1);
+            renderMessages(true);
+            localforage.setItem(`${APP_PREFIX}${session()}_chatMessages`, messages);
+        }
         lastPartner=[...messages].reverse().find(x=>x.sender!=='user'&&x.type==='normal')?.id||null;
         chatBaselineReady=true;clearInterval(baselineTimer);
     },500);
