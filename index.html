@@ -338,6 +338,7 @@
         </div>
         <div class="input-area">
     <button id="collapse-expand-btn" title="展开更多" style="display:none;width:36px;height:36px;border:none;border-radius:50%;cursor:pointer;background:rgba(var(--accent-color-rgb),0.12);color:var(--accent-color);font-size:14px;transition:all 0.25s;flex-shrink:0;align-items:center;justify-content:center;" onclick="window.toggleCollapsedExtras && window.toggleCollapsedExtras()"><i class="fas fa-chevron-up"></i></button>
+    <button class="input-btn collapse-hideable" id="red-envelope-btn" type="button" title="红包转账" aria-label="红包转账"><i class="fas fa-envelope" aria-hidden="true"></i></button>
     <button class="attachment-btn input-btn collapse-hideable" id="attachment-btn" title="发送图片"><i class="fas fa-image"></i></button>
     
     <button class="combo-btn input-btn collapse-hideable" id="combo-btn" title="表情 & 拍一拍">
@@ -345,8 +346,6 @@
     </button>
 
     <button class="input-btn collapse-hideable" id="survey-btn" type="button" title="问卷调查" aria-label="问卷调查"><i class="fas fa-clipboard-list" aria-hidden="true"></i></button>
-    <button class="input-btn collapse-hideable" id="heart-market-btn" type="button" title="心意市集" aria-label="心意市集"><i class="fas fa-gift" aria-hidden="true"></i></button>
-
     <textarea class="message-input" id="message-input" placeholder="" rows="1"></textarea>
     
     <div class="input-buttons">
@@ -1381,6 +1380,9 @@
                     <div class="settings-item" id="music-player-toggle">
                         <i class="fas fa-music"></i><span>悬浮音乐播放器</span>
                     </div>
+                    <div class="settings-item" id="heart-market-btn" role="button" tabindex="0" aria-label="打开心愿市集">
+                        <i class="fas fa-gift"></i><span>心愿市集</span>
+                    </div>
                     <div class="settings-item" id="stats-function">
                         <i class="fas fa-chart-bar"></i><span>消息统计</span>
                     </div>
@@ -2242,7 +2244,8 @@
     <script src="js/app.js"></script>
     <script src="js/features/survey.js"></script>
     <script src="js/features/listen-together.js"></script>
-    <script src="js/features/heart-market.js?v=2"></script>
-    <script src="js/features/heart-market-ui.js?v=5"></script>
+    <script src="js/features/heart-market.js?v=3"></script>
+    <script src="js/features/heart-market-ui.js?v=6"></script>
+    <script src="js/features/red-envelope.js?v=1"></script>
 </body>
 </html>
