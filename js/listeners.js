@@ -2401,6 +2401,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
 
     // Public adapter for the optional listen-together module.
     window.musicTogetherBridge = {
+        cycleMode: () => document.getElementById('mode-btn').click(),
         list: () => songs.map(s => ({title: s.title, url: s.url})),
         current: () => songs[currentIndex] ? {title: songs[currentIndex].title, url: songs[currentIndex].url} : null,
         async playUrl(url) {
@@ -2432,10 +2433,12 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
         document.getElementById('music-subtitle').innerText = song.sub;
         
         if (song.url) audio.src = song.url;
+        window.dispatchEvent(new Event('music-track-loaded'));
         updatePlaylistHighlight();
     }
 
     function togglePlay() {
+        window.dispatchEvent(new Event('music-user-playback'));
         if (songs.length === 0) {
             showNotification('播放列表为空', 'warning');
             return;
@@ -2462,13 +2465,13 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
         }
     }
 
-    function nextSong() {
+    function nextSong(auto = false) {
         if (songs.length === 0) return;
         if (playMode === 'single') { loadSong(currentIndex); }
         else if (playMode === 'shuffle') currentIndex = Math.floor(Math.random() * songs.length);
         else currentIndex = (currentIndex + 1) % songs.length;
         if (playMode !== 'single') loadSong(currentIndex);
-        if (isPlaying) audio.play();
+        if (auto === true || isPlaying) audio.play().catch(() => showNotification('点击播放继续听歌', 'info'));
     }
 
     function prevSong() {
@@ -2848,7 +2851,9 @@ playlist.style.top = (rect.top + (player.classList.contains('collapsed') ? 65 : 
         const { duration, currentTime } = e.target;
         if (duration) document.getElementById('progress-bar').style.width = `${(currentTime / duration) * 100}%`;
     });
-    audio.addEventListener('ended', nextSong);
+    audio.addEventListener('ended', () => {
+        if (!window.musicTogetherOnEnded?.()) nextSong(true);
+    });
 
     const _mode_btnEl = document.getElementById('mode-btn');
     if (_mode_btnEl) _mode_btnEl.addEventListener('click', () => {
@@ -3218,3 +3223,4 @@ window.exitCollapseMode = function() {
         setTimeout(tryApply, 400);
     }
 })();
+
