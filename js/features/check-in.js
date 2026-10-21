@@ -1,4 +1,4 @@
-/* 查岗：一位对象，共用题库，聊天内题卡与离开聊天后的待处理邀请。 */
+/* 当前聊天的查岗与题库；其他会话由 incoming-requests.js 统一调度。 */
 (()=>{
 'use strict';
 const E=window.CheckInEngine;if(!E)return;
@@ -47,11 +47,13 @@ $('message-input')?.addEventListener('input',()=>lastTyped=Date.now());
 function field(parent,title,input){const l=node('label',title);l.append(input);parent.append(l);return input;}
 function renderSettings(){
  settingsBody.replaceChildren();const c=engine.data.config,inputs={};
- for(const [k,label]of [['enabled','开启对方查岗'],['away','离开聊天时也可以查岗'],['night','夜间免打扰（22:00–07:00）']]){const i=node('input');i.type='checkbox';i.checked=c[k];i.setAttribute('aria-label',label);inputs[k]=field(settingsBody,label,i);}
+ for(const [k,label]of [['enabled','开启对方查岗'],['away','允许这个对象跨桌面联系我'],['night','夜间免打扰（22:00–07:00）']]){const i=node('input');i.type='checkbox';i.checked=c[k];i.setAttribute('aria-label',label);inputs[k]=field(settingsBody,label,i);}
  for(const [k,label,max]of [['chance','每轮聊天触发概率（%）',100],['cooldown','查岗冷却（分钟）',1440],['autoOpen','自动打开答题框（%）',100]]){const i=node('input');i.type='number';i.min=0;i.max=max;i.value=c[k];i.setAttribute('aria-label',label);inputs[k]=field(settingsBody,label,i);}
- const frequency=node('select');for(const [v,t]of [['quiet','安静 · 1% / 180 分钟'],['standard','标准 · 2% / 30 分钟'],['quieter','更安静 · 0.5% / 360 分钟'],['quietest','最安静 · 0.2% / 720 分钟']]){const o=node('option',t);o.value=v;frequency.append(o);}frequency.value=c.frequency;field(settingsBody,'离开聊天时的频率',frequency);
- settingsBody.append(button('保存设置',()=>{const next={...c,frequency:frequency.value};for(const[k,i]of Object.entries(inputs)){if(i.type==='checkbox')next[k]=i.checked;else{const v=Number(i.value);if(!i.value.trim()||!Number.isFinite(v)||v<0||v>Number(i.max))return toast('请输入范围内的数字');next[k]=v;}}engine.data.config=next;if(persist())toast('查岗设置已保存');}));
- settingsBody.append(node('p','同一时间只保留一条待回答查岗；题目不会连续重复。页面关闭后不会在后台运行，重新打开可继续回答已保存的题卡。'));
+ const frequency=node('select');for(const [v,t]of [['quiet','安静 · 1% / 180 分钟'],['standard','标准 · 2% / 30 分钟'],['quieter','更安静 · 0.5% / 360 分钟'],['quietest','最安静 · 0.2% / 720 分钟']]){const o=node('option',t);o.value=v;frequency.append(o);}frequency.value=window.IncomingRequests?.config().frequency||'quiet';field(settingsBody,'跨桌面频率（所有对象共用）',frequency);
+ const cross=window.IncomingRequests?.config()||{call:.2,chat:.5},crossInputs={};
+ for(const[k,t]of [['call','跨桌面来电（%）'],['chat','跨桌面聊天请求（%）']]){const i=node('input');i.type='number';i.min=0;i.max=30;i.step=.1;i.value=cross[k];crossInputs[k]=field(settingsBody,t,i);}
+ settingsBody.append(button('保存设置',()=>{const next={...c,frequency:frequency.value};for(const[k,i]of Object.entries(inputs)){if(i.type==='checkbox')next[k]=i.checked;else{const v=Number(i.value);if(!i.value.trim()||!Number.isFinite(v)||v<0||v>Number(i.max))return toast('请输入范围内的数字');next[k]=v;}}for(const i of Object.values(crossInputs))if(!i.value.trim()||!Number.isFinite(Number(i.value))||Number(i.value)<0||Number(i.value)>30)return toast('跨桌面概率请输入 0–30');window.IncomingRequests?.configure({frequency:frequency.value,call:Number(crossInputs.call.value),chat:Number(crossInputs.chat.value)});engine.data.config=next;if(persist())toast('查岗设置已保存');}));
+ settingsBody.append(node('p','本地查岗只针对当前聊天；跨桌面每分钟检查其他会话，依次判断来电、查岗、聊天请求。只有一个会话时，不会触发跨桌面请求。页面关闭后不会继续计时。'));
  settingsBody.append(button('开启后台系统通知',async()=>{if(!('Notification'in window))return toast('当前浏览器不支持系统通知');const result=await Notification.requestPermission();toast(result==='granted'?'已允许通知':'未开启通知，返回页面后仍可查看查岗');}));
  const pending=engine.pending();if(pending)settingsBody.append(button('查看待回答查岗',()=>openAnswer(pending.id)));
  const list=node('div');list.append(node('h3','共用题库'));
@@ -106,12 +108,12 @@ function attempt(away){
   deferrals=0;
  }else if(Math.random()*100<engine.data.config.autoOpen){const sid=sessionId;setTimeout(()=>{if(ready()&&sessionId===sid&&r.status==='pending'&&!gated()&&!typing()&&!modalBusy()&&!document.hidden&&!incoming.open&&!answerDialog.open)openAnswer(r.id);},400);}
 }
-window.addEventListener('chat-message-added',e=>{const m=e.detail;if(m?.type==='normal'&&m.sender!=='user'&&m.sender!=='system'&&!m.checkInInteraction&&!m.musicInteraction&&!document.hidden&&!modalBusy()&&!incoming.open&&!answerDialog.open)attempt(false);});
+window.addEventListener('chat-message-added',e=>{const m=e.detail;if(m?.type==='normal'&&m.sender!=='user'&&m.sender!=='system'&&!m.checkInInteraction&&!m.musicInteraction&&!document.hidden&&!incoming.open&&!answerDialog.open)attempt(false);});
 function drain(){
  if(draining||!ready())return;draining=true;
- try{if(engine.clean())persist();for(const r of engine.data.records){if(!r.delivered)deliver(r);if(r.status==='answered'&&!r.replySent&&Date.now()>=r.replyAt&&!gated()&&!document.hidden){put('ck-answer-'+r.id,esc(r.answer),'user','normal',r.doneAt);put('ck-reply-'+r.id,esc(r.reply),partner(),'normal',r.replyAt);r.replySent=true;persist();}refreshCard(r);}const r=engine.pending();if(r?.away&&!r.notified&&!gated())showIncoming(r);}finally{draining=false;}
+ try{if(engine.clean())persist();for(const r of engine.data.records){if(!r.delivered)deliver(r);if(r.status==='answered'&&!r.replySent&&Date.now()>=r.replyAt&&!gated()&&!document.hidden){put('ck-answer-'+r.id,esc(r.answer),'user','normal',r.doneAt);put('ck-reply-'+r.id,esc(r.reply),partner(),'normal',r.replyAt);r.replySent=true;persist();}refreshCard(r);}}finally{draining=false;}
 }
-setInterval(()=>{if(!ready())return;const away=document.hidden||modalBusy();if(away)attempt(true);drain();},60000);
+window.CheckInUI={ready,session,typing,modalBusy,gated,card,textFor,open:openAnswer,drain,deliver,put};
 setInterval(drain,1000);
 window.addEventListener('storage',e=>{if(e.key==='CHAT_APP_V3_checkIn_'+sessionId){engine=E.create({storage:localStorage,key:e.key,id:()=>crypto.randomUUID()});if(answerDialog.open&&answerId)openAnswer(answerId);}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)drain();});
