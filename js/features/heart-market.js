@@ -27,7 +27,7 @@ window.HeartMarket = (function () {
         rpAutoOn: true, rpAutoPct: 4, rpReplyPct: 60, rpReplyMode: 0,
         giftInOn: true, wlOn: true, selfOn: true, wishChatOn: true, selfChatOn: true,
         nightOn: false, nightStart: 23, nightEnd: 7, messageLimit: 0,
-        walletDefaultFen: 52000,   // 初始余额：双方各 ¥520
+        walletDefaultFen: 520000,   // 初始余额：双方各 ¥5200
         wishMax: 30,               // 每份心愿单上限
         ledgerMax: 100,            // 账本保留条数
         giftInPct: 5,              // TA 直接送我礼物概率 %
@@ -104,13 +104,22 @@ window.HeartMarket = (function () {
     /* ---------------- 钱包（全局单例） ---------------- */
     const WALLET_KEY = 'gift-wallet';
     function walletGet() {
+        return atomic(() => {
         let w = store.get(WALLET_KEY);
         if (!w || !Number.isSafeInteger(w.myBalance) || !Number.isSafeInteger(w.systemBalance) || w.myBalance < 0 || w.systemBalance < 0
             || (w.myBalance === 99999999 && w.systemBalance === 99999999)) {  // 出厂测试值哨兵
-            w = { myBalance: CFG.walletDefaultFen, systemBalance: CFG.walletDefaultFen };
+            w = { myBalance: 520000, systemBalance: 520000 };
+            store.set("wallet-5200-migrated", true);
             store.set(WALLET_KEY, w);
         }
+        if (!store.get('wallet-5200-migrated')) {
+            w.myBalance += 468000; w.systemBalance += 468000;
+            store.set(WALLET_KEY, w);
+            store.set('wallet-5200-migrated', true);
+            ledgerAdd('earn', 468000, 468000, '初始心意币补足至5200');
+        }
         return w;
+        });
     }
     function walletSet(w) { if (![w.myBalance, w.systemBalance].every(n => Number.isSafeInteger(n) && n >= 0)) throw Error('余额必须是非负整数'); store.set(WALLET_KEY, { myBalance: w.myBalance, systemBalance: w.systemBalance }); }
     // 统一增减口：任何功能动钱都走这里，并自动记账本。dMy/dTa 单位为分，可为负。
