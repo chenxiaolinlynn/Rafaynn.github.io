@@ -10,7 +10,31 @@
     const btn = (text, fn) => { const b = el('button', text); b.type = 'button'; b.addEventListener('click', fn); return b; };
     const currentSession = () => typeof SESSION_ID !== 'undefined' ? SESSION_ID : null;
     const pick = list => list[Math.floor(Math.random() * list.length)];
-    const interval = () => Date.now() + 180000 + Math.random() * 180000;
+    const CONFIG = KEY + '_config';
+    const defaults = {accept:60, refuse:25, change:15, request:5, cooldown:10, queue:6, next:15, random:10, mode:5, pause:3};
+    let config = {...defaults};
+    try {
+        const saved = JSON.parse(localStorage.getItem(CONFIG) || '{}');
+        for (const k of Object.keys(defaults)) {
+            const value = saved[k];
+            if (Number.isFinite(value) && value >= 0 && value <= (k === 'request' ? 30 : k === 'cooldown' ? 1440 : 100)) config[k] = value;
+        }
+        if (config.accept + config.refuse + config.change !== 100 || config.next + config.random + config.mode > 100) config = {...defaults};
+    } catch {}
+    let incoming = null, queued = null, trackVersion = 0, pauseTimer = null, resumeTimer = null, switchTimer = null;
+    let lastRequest = 0, requestSession = null, lastPauseVersion = -1;
+    const historyKey = () => KEY + '_events_' + currentSession();
+    const say = (text, system = false) => addMessage({id:Date.now()+Math.random(), sender:system?'system':identity().partner,
+        type:system?'system':'normal', text:String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])), timestamp:new Date(), status:'received', musicInteraction:true});
+    function log(text) {
+        say(text, true);
+        const event = {at:Date.now(), text};
+        if (state?.status === 'active') { (state.events ||= []).push(event); persist(); }
+        try { const history=JSON.parse(localStorage.getItem(historyKey()) || '[]'); history.push(event); localStorage.setItem(historyKey(),JSON.stringify(history.slice(-100))); } catch {}
+    }
+    const active = () => state?.status === 'active' && state.session === currentSession();
+    function clearPlaybackTimers() { clearTimeout(pauseTimer); clearTimeout(resumeTimer); clearTimeout(switchTimer); }
+
     const api = () => window.musicTogetherBridge;
     let state = null, acceptTimer = null, ready = false;
     let allowSwitch = true;
@@ -49,6 +73,26 @@
         await api()?.playUrl(url); if (state) { delete state.recommended; persist(); } recommendation.hidden = true;
     }); recommendation.hidden = true;
     panel.append(header, people, time, song, status, label, recommendation, actions); document.body.append(panel);
+    const preferences = el('details'), prefTitle = el('summary', '音乐互动设置'); preferences.append(prefTitle);
+    const inputs = {};
+    const names = {accept:'接受邀请（%）', refuse:'拒绝邀请（%）', change:'要求换歌（%）', request:'主动邀请（%，最高 30）', cooldown:'邀请冷却（分钟）', queue:'未邀请时预订下一首（%）', next:'歌曲结束：换另一首（%）', random:'歌曲结束：随机选歌（%）', mode:'歌曲结束：改变模式（%）', pause:'歌曲开始：暂停互动（%）'};
+    for (const [key, name] of Object.entries(names)) {
+        const row=el('label', name), input=el('input'); input.type='number'; input.min='0'; input.max=key==='request'?'30':key==='cooldown'?'1440':'100'; input.step='1'; input.value=config[key]; input.setAttribute('aria-label',name); input.style.width='70px'; inputs[key]=input; row.append(input); preferences.append(row);
+    }
+    preferences.append(btn('保存音乐设置', () => {
+        const values=Object.fromEntries(Object.entries(inputs).map(([k,n])=>[k,Number(n.value)]));
+        if (Object.entries(values).some(([k,v])=>!Number.isFinite(v)||v<0||v>Number(inputs[k].max)||inputs[k].value.trim()==='') || values.accept+values.refuse+values.change!==100 || values.next+values.random+values.mode>100) {
+            showNotification('邀请回应合计须为 100%；歌曲结束的三个概率合计不能超过 100%，请检查输入范围', 'warning'); return;
+        }
+        try { localStorage.setItem(CONFIG,JSON.stringify(values)); config=values; showNotification('音乐设置已保存','success'); }
+        catch { showNotification('设置保存失败，请检查存储空间','error'); }
+    }));
+    panel.append(preferences);
+    const requestPanel=el('dialog'); requestPanel.id='lt-request'; requestPanel.setAttribute('aria-label','对方的听歌邀请');
+    const requestText=el('p'), requestActions=el('div'); requestPanel.append(el('h2','一起听歌'),requestText,requestActions); document.body.append(requestPanel);
+    style.textContent += '#lt-request{width:min(420px,calc(100% - 28px));max-height:85dvh;overflow:auto;margin:auto;padding:24px;border:1px solid var(--border-color);border-radius:24px;background:var(--secondary-bg);color:var(--text-primary)}#lt-request::backdrop{background:rgba(0,0,0,.35)}#lt-request button{font:inherit;padding:12px 20px;margin:8px;border:0;border-radius:12px;background:var(--accent-color);color:var(--message-sent-text)}#lt-panel details{margin-top:20px}#lt-panel details label{justify-content:space-between;margin:12px 0}#lt-panel details input{background:var(--primary-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:8px;padding:6px}';
+    requestPanel.addEventListener('cancel', e => { e.preventDefault(); answerRequest(false); });
+
     const summary = el('dialog'); summary.id = 'lt-summary'; summary.setAttribute('aria-label', '本次一起听');
     const summaryBody = el('div');
     summary.append(summaryBody, btn('完成', () => summary.close())); document.body.append(summary);
@@ -98,18 +142,65 @@
     }
     function start() {
         if (!ready || !currentSession() || !api()) { status.textContent = '播放器正在准备，请稍后重试'; return; }
-        if (state) { status.textContent = '请先关闭上次一起听的汇总'; return; }
-        if (!api().list().length) { status.textContent = '歌单为空，请先添加歌曲'; return; }
-        state = { id: 'listen-' + crypto.randomUUID(), session: currentSession(), ...identity(), status: 'inviting', tracks: [] };
-        if (!persist()) { state = null; return; }
-        render(); const id = state.id;
-        acceptTimer = setTimeout(() => {
-            if (state?.id !== id || state.session !== currentSession()) return;
-            state.status = 'active'; state.startedAt = Date.now(); state.lastSeen = state.startedAt; state.nextInteraction = interval();
-            persist(); render(); recordTrack();
-            if (audio.paused) status.textContent = `${state.partner}已接受邀请，点击播放器的播放按钮开始听歌`;
-        }, 3000 + Math.random() * 5000);
+        if (state || incoming) { status.textContent = '请先处理当前邀请或关闭上次汇总'; return; }
+        const track=api().current();
+        if (!track?.url) { status.textContent = '歌单为空，请先添加歌曲'; return; }
+        state = { id:'listen-'+crypto.randomUUID(), session:currentSession(), ...identity(), status:'inviting', tracks:[], events:[] };
+        if (!persist()) { state=null; return; }
+        render(); const id=state.id;
+        acceptTimer=setTimeout(() => {
+            if (state?.id!==id || state.session!==currentSession()) return;
+            const roll=Math.random()*100, alternatives=api().list().filter(t=>t.url!==track.url);
+            if (roll < config.accept || (roll >= config.accept+config.refuse && !alternatives.length)) {
+                say(pick(['一起听呀。','放吧，我靠近一点。'])); begin(track);
+            } else if (roll < config.accept+config.refuse) {
+                say(pick(['这首现在不想听嘛。','待会儿再听好不好？']));
+                log(identity().partner+'这次没答应'); state=null; persist(); render();
+            } else {
+                say('这首听腻啦，换一首嘛～'); state=null; persist(); render(); offer(pick(alternatives));
+            }
+        },1500+Math.random()*2500);
     }
+    async function begin(track) {
+        if (!active()) state={id:'listen-'+crypto.randomUUID(),session:currentSession(),...identity(),status:'active',tracks:[],events:[],startedAt:Date.now(),lastSeen:Date.now()};
+        persist(); render();
+        const success=await api().playUrl(track.url);
+        if (active() && !success) status.textContent='已接受邀请，请点击播放重试或更换歌曲';
+    }
+    function offer(track) {
+        if (!track || incoming || state?.status==='inviting' || state?.status==='ended') return;
+        incoming={track,session:currentSession()};
+        lastRequest=Date.now(); requestSession=currentSession();
+        try { localStorage.setItem(KEY+'_request_'+requestSession,String(lastRequest)); } catch {}
+        requestText.textContent=audio.paused ? `${identity().partner}想和你一起听《${track.title}》` : `${identity().partner}想邀请你切换到《${track.title}》`;
+        requestActions.replaceChildren(btn(audio.paused?'一起听':'切过去',()=>answerRequest(true)),btn('稍后',()=>answerRequest(false)));
+        if (panel.open) panel.close(); requestPanel.showModal();
+    }
+    function answerRequest(accept) {
+        const request=incoming; incoming=null; requestPanel.close();
+        if (!request || request.session!==currentSession()) return;
+        if (accept) { log(`接受了${identity().partner}的听歌邀请 · ${request.track.title}`); begin(request.track); }
+        else { log(`暂时拒绝了${identity().partner}的听歌邀请 · ${request.track.title}`); render(); }
+    }
+    function maybeMusicRequest() {
+        if (!ready || !currentSession() || incoming || state?.status==='inviting' || state?.status==='ended') return;
+        if (requestSession!==currentSession()) {
+            requestSession=currentSession();
+            try { lastRequest=Number(localStorage.getItem(KEY+'_request_'+requestSession)) || 0; } catch { lastRequest=0; }
+        }
+        if (Date.now()-lastRequest < config.cooldown*60000) return;
+        const list=api()?.list().filter(t=>t.url); if (!list?.length) return;
+        if (Math.random()*100 < config.request) offer(pick(list));
+        else if (!queued && Math.random()*100 < config.queue) {
+            queued={...pick(list),session:currentSession()};
+            log(`${identity().partner}预订了下一首《${queued.title}》`);
+        }
+    }
+    window.addEventListener('chat-message-added', e => {
+        const m=e.detail;
+        // One checkpoint for each ordinary partner reply; music's own replies never recurse.
+        if (m && m.type==='normal' && m.sender!=='user' && m.sender!=='system' && !m.musicInteraction) maybeMusicRequest();
+    });
     function updateTime() {
         const seconds = Math.max(0, Math.floor((Date.now() - state.startedAt) / 1000));
         const text = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -128,28 +219,46 @@
             return (typeof customReplies !== 'undefined' ? customReplies : []).filter(x => !disabled.has(x) && String(x).trim());
         } catch { return []; }
     }
-    async function interact() {
-        if (state?.status !== 'active' || state.session !== currentSession() || audio.paused) return;
-        const current = api().current(), all = api().list().filter(x => x.url && x.url !== current?.url);
-        const fresh = all.filter(x => !state.tracks.some(t => t.url === x.url));
-        const pool = fresh.length ? fresh : all, replies = cards();
-        const choices = [...(pool.length ? ['recommend'] : []), ...(pool.length && allowSwitch ? ['switch'] : []), ...(replies.length ? ['card'] : [])];
-        const action = pick(choices); if (!action) return;
-        if (action === 'card') {
-            addMessage({ id: Date.now(), sender: 'partner', type: 'normal', text: String(pick(replies)), timestamp: new Date(), status: 'received' });
-            return;
-        }
-        const target = pick(pool), partner = state.partner;
-        if (action === 'recommend') {
-            state.recommended = target; persist();
-            recommendation.textContent = `播放推荐 · ${target.title}`; recommendation.dataset.url = target.url; recommendation.hidden = false;
-            status.textContent = `${partner}推荐了《${target.title}》`;
-            showNotification(`${partner}推荐《${target.title}》，打开一起听面板查看`, 'info');
-        } else {
-            const success = await api().playUrl(target.url);
-            if (success) { status.textContent = `${partner}想和你听《${target.title}》`; showNotification(status.textContent, 'info'); }
-        }
+    function trackStarted() {
+        clearPlaybackTimers(); trackVersion++; lastPauseVersion=-1;
     }
+    function maybePause() {
+        if (!active() || lastPauseVersion===trackVersion) return;
+        lastPauseVersion=trackVersion;
+        if (Math.random()*100 >= config.pause) return;
+        const version=trackVersion, id=state.id;
+        pauseTimer=setTimeout(() => {
+            if (!active() || state.id!==id || version!==trackVersion || audio.paused || audio.ended) return;
+            audio.pause(); say(String(pick(cards()) || '宝宝，陪我说句话再继续听。'));
+            resumeTimer=setTimeout(() => {
+                if (active() && state.id===id && version===trackVersion && audio.paused) audio.play().catch(()=>showNotification('点击播放继续听歌','info'));
+            },3500);
+        },10000+Math.random()*15000);
+    }
+    function ended() {
+        clearPlaybackTimers();
+        const list=api().list().filter(t=>t.url), current=api().current();
+        let target=null;
+        if (active() && allowSwitch) {
+            const roll=Math.random()*100;
+            if (roll<config.next) target=pick(list.filter(t=>t.url!==current?.url));
+            else if (roll<config.next+config.random) target=pick(list);
+            else if (roll<config.next+config.random+config.mode) { api().cycleMode(); log(identity().partner+'换了播放模式'); }
+        }
+        // Explicit next-track reservations take priority, but still consume one end-of-song roll.
+        if (queued?.session===currentSession()) { target=list.find(t=>t.url===queued.url) || target; queued=null; }
+        if (!target) return false;
+        const version=trackVersion, session=currentSession();
+        switchTimer=setTimeout(() => {
+            if (version!==trackVersion || session!==currentSession() || !audio.ended) return;
+            api().playUrl(target.url);
+        },300);
+        return true;
+    }
+    window.musicTogetherOnEnded=ended;
+    window.addEventListener('music-track-loaded',trackStarted);
+    // A manual pause or resume supersedes a pending simulated pause/resume.
+    window.addEventListener('music-user-playback',clearPlaybackTimers);
     function recordCard(record) {
         const card = el('div', undefined, 'lt-record'); card.append(el('h3', '♫ 本次一起听'));
         const pair = el('div', undefined, 'lt-people'); peopleView(pair, record); card.append(pair);
@@ -157,6 +266,7 @@
         card.append(el('p', `一起听了 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒 · ${record.tracks.length} 首歌`));
         record.tracks.forEach((track, i) => card.append(el('p', `${i + 1}. ${track.title}`)));
         if (!record.tracks.length) card.append(el('p', '本次没有成功播放的歌曲'));
+        (record.events || []).forEach(event => card.append(el('small', event.text),el('br')));
         card.append(el('small', record.reason));
         return card;
     }
@@ -168,21 +278,25 @@
         summary.showModal();
     }
     function finish(reason, endedAt = Date.now()) {
-        clearTimeout(acceptTimer);
+        clearTimeout(acceptTimer); clearPlaybackTimers(); queued=null;
+        if (incoming) { incoming=null; requestPanel.close(); }
         if (state?.status === 'inviting') { state = null; persist(); render(); return; }
         if (state?.status !== 'active') return;
         state.status = 'ended'; state.endedAt = endedAt; state.reason = reason; persist(); render(); deliver();
     }
+    audio.addEventListener('playing',maybePause);
     for (const event of ['playing', 'pause', 'loadedmetadata']) audio.addEventListener(event, () => { recordTrack(); updateSong(); });
     // Music initialization is called after the application's session and data load.
     window.addEventListener('music-together-ready', () => { ready = true; deliver(); });
     if (api()) ready = true;
     setInterval(() => {
         if (!ready) return;
+        if (incoming && incoming.session!==currentSession()) { incoming=null; requestPanel.close(); }
+        if (queued && queued.session!==currentSession()) queued=null;
         if (state && state.session !== currentSession() && state.status !== 'ended') finish('切换聊天，同听已结束', state.lastSeen || Date.now());
         if (state?.status === 'active') {
             state.lastSeen = Date.now(); updateTime(); recordTrack(); persist();
-            if (Date.now() >= state.nextInteraction) { state.nextInteraction = interval(); persist(); interact(); }
+
         } else if (state?.status === 'ended') deliver();
     }, 1000);
     const checkpoint = () => { if (state?.status === 'active') { state.lastSeen = Date.now(); persist(); } };
