@@ -727,6 +727,22 @@ window.HeartMarket = (function () {
         }
     }
 
+    function transferSend(tx) {
+        if (!tx || !Number.isSafeInteger(tx.fen) || tx.fen <= 0 || !tx.id || !tx.session) throw Error('金额无效');
+        const list = store.get('transfers') || [];
+        const existing = list.find(x => x.id === tx.id);
+        if (existing) return existing;
+        if (walletGet().myBalance < tx.fen) throw Error('心意币余额不足');
+        walletChange(-tx.fen, tx.fen, '红包转账');
+        list.push(copy(tx)); store.set('transfers', list);
+        return tx;
+    }
+    function transferUpdate(id, changes) {
+        const list = store.get('transfers') || [], tx = list.find(x => x.id === id);
+        if (!tx) return;
+        for (const key of ['claimed', 'delivered', 'synced']) if (key in changes) tx[key] = !!changes[key];
+        store.set('transfers', list); return tx;
+    }
     function wishMyRemove(id) { wishSave(WL_MY, wishLoad(WL_MY).filter(x => x.giftId !== id)); }
     function claim(id) {
         const box = boxLoad(), entry = box.find(x => x.id === id);
@@ -744,6 +760,7 @@ window.HeartMarket = (function () {
     }
     return {
         init, config: CFG, cats: CATS, flush,
+        transfers: { list: () => store.get("transfers") || [], send: mutate(transferSend), update: mutate(transferUpdate) },
         wallet: { get: walletGet, set: mutate(walletSet), change: mutate(walletChange), ask: mutate(walletAsk) },
         ledger: { list: ledgerLoad },
         goods: { list: goodsList, addCustom: mutate(goodsAddCustom), setOff: mutate(goodsSetOff), find: findGoods,
