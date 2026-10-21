@@ -570,7 +570,10 @@ window.HeartMarket = (function () {
     const REPLY_WISH = ['我的心愿被你实现啦！', '真的买下啦…说好不让你乱花钱的', '许愿时没想过真能收到，谢谢～', '心愿单少了一件，开心值满格', '你记得我的心愿，这个最戳我'];
     function enqueue(kind, payload, delay = 0) {
         const queue = store.get('outbox') || [];
-        const event = { id: 'hm-' + crypto.randomUUID(), kind, payload, session: host.sessionId(), dueAt: Date.now() + delay };
+        // Existing chat actions parse message IDs as numbers; keep them monotonic and collision-free.
+        const id = Math.max(Date.now() * 1000, Number(store.get('event-seq')) + 1 || 1);
+        store.set('event-seq', id);
+        const event = { id, kind, payload, session: host.sessionId(), dueAt: Date.now() + delay };
         queue.push(event); store.set('outbox', queue); return event;
     }
     function giftReplyFeedback(gift, boxId, satisfied) {
