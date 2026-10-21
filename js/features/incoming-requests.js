@@ -73,7 +73,7 @@ async function tick(){
   if(!kind)continue;
   const r={id:crypto.randomUUID(),session:s.id,name,kind,at:Date.now(),status:'pending',questionId:q?.id,text:q?U.textFor(q):'',injected:false};
   e.data.lastAway=Date.now();e.save();queue.push(r);write(KEY,queue);
-  if(document.hidden&&'Notification'in window&&Notification.permission==='granted'){try{const n=new Notification(title(r),{body:'返回页面处理这条邀请',tag:'incoming-'+s.id});n.onclick=()=>{window.focus();n.close();};}catch{}}
+  if(document.hidden)window.SiteNotifications?.send(title(r),'返回页面处理这条邀请','incoming-'+s.id);
   // Force delivery means persist the request, never bypass the lock or a live call.
   if(!obstructed)prompt(r);
   if(queue.length>=20)break;
