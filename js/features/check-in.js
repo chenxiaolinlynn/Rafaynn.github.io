@@ -54,7 +54,7 @@ function renderSettings(){
  for(const[k,t]of [['call','跨桌面来电（%）'],['chat','跨桌面聊天请求（%）']]){const i=node('input');i.type='number';i.min=0;i.max=30;i.step=.1;i.value=cross[k];crossInputs[k]=field(settingsBody,t,i);}
  settingsBody.append(button('保存设置',()=>{const next={...c,frequency:frequency.value};for(const[k,i]of Object.entries(inputs)){if(i.type==='checkbox')next[k]=i.checked;else{const v=Number(i.value);if(!i.value.trim()||!Number.isFinite(v)||v<0||v>Number(i.max))return toast('请输入范围内的数字');next[k]=v;}}for(const i of Object.values(crossInputs))if(!i.value.trim()||!Number.isFinite(Number(i.value))||Number(i.value)<0||Number(i.value)>30)return toast('跨桌面概率请输入 0–30');window.IncomingRequests?.configure({frequency:frequency.value,call:Number(crossInputs.call.value),chat:Number(crossInputs.chat.value)});engine.data.config=next;if(persist())toast('查岗设置已保存');}));
  settingsBody.append(node('p','本地查岗只针对当前聊天；跨桌面每分钟检查其他会话，依次判断来电、查岗、聊天请求。只有一个会话时，不会触发跨桌面请求。页面关闭后不会继续计时。'));
- settingsBody.append(button('开启后台系统通知',async()=>{if(!('Notification'in window))return toast('当前浏览器不支持系统通知');const result=await Notification.requestPermission();toast(result==='granted'?'已允许通知':'未开启通知，返回页面后仍可查看查岗');}));
+ settingsBody.append(button('开启系统通知',async()=>{const result=await window.SiteNotifications.enable();toast(result.message);}));
  const pending=engine.pending();if(pending)settingsBody.append(button('查看待回答查岗',()=>openAnswer(pending.id)));
  const list=node('div');list.append(node('h3','共用题库'));
  for(const q of engine.data.questions){const row=node('div');row.className='ck-question';const on=node('input');on.type='checkbox';on.checked=q.enabled;on.onchange=()=>{q.enabled=on.checked;persist();};field(row,q.text,on);row.append(node('small',q.type==='action'?'互动题':q.options?.length?'单选题':'填空题'),button('编辑',()=>editQuestion(q)));list.append(row);}
@@ -103,7 +103,7 @@ function attempt(away){
  deliver(r);
  if(away){
   // After repeated deferral deliver only the passive card, never force a modal over typing/calls.
-  if(document.hidden&&'Notification'in window&&Notification.permission==='granted'){try{const n=new Notification(partner()+'来查岗了',{body:'有一张待回答的查岗题卡',tag:'check-in'});n.onclick=()=>{window.focus();n.close();};}catch{}}
+  if(document.hidden)window.SiteNotifications?.send(partner()+'来查岗了','有一张待回答的查岗题卡','check-in');
   else showIncoming(r);
   deferrals=0;
  }else if(Math.random()*100<engine.data.config.autoOpen){const sid=sessionId;setTimeout(()=>{if(ready()&&sessionId===sid&&r.status==='pending'&&!gated()&&!typing()&&!modalBusy()&&!document.hidden&&!incoming.open&&!answerDialog.open)openAnswer(r.id);},400);}
