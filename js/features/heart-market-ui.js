@@ -162,7 +162,7 @@
             try {
                 const added=H.wish.myAdd(g);
                 wishSide='my';render('wish');
-                toast(added?`已把「${g.name}」加入我的心愿单，对方稍后会看看`:'这件已经在我的心愿单里');
+                toast(added?`已把「${g.name}」加入我的心愿单，聊天时对方有机会买下`:'这件已经在我的心愿单里');
             } catch(error) {addWish.disabled=false;toast(error.message||'心愿保存失败，请检查浏览器存储空间');}
         };
         back.onclick=()=>render('market');
@@ -204,13 +204,13 @@
         view = 'form';
         const c=H.config, fields=[['giftInPct','直接送我礼物概率（%）'],['wlBuyPct','对方购买我的心愿概率（%）'],['selfPct','给自己买概率（%）'],['wlAddPct','添加心愿概率（%）'],['wishChatPct','心愿卡发到聊天概率（%）'],['giftReplyPct','送礼回话概率（%）']];
         const switches=[['giftInOn','允许对方送我礼物'],['wlOn','启用双向心愿单'],['selfOn','允许对方给自己买'],['wishChatOn','对方心愿可发到聊天'],['selfChatOn','对方自购可发到聊天'],['giftReplyOn','我送礼后对方可回话'],['nightOn','夜间免打扰（23:00–07:00）']];
-        body.innerHTML=`<form class="hm-form"><h3>自动互动设置</h3><p>添加心愿 3–8 秒后判断一次是否购买；暂时不买会保留心愿，后续每轮聊天还会按概率判断。需要开启双向心愿单和对方送礼；余额不足、夜间免打扰或每日送礼已达 3 次时不会购买。</p>${switches.map(([k,n])=>`<label><input name="${k}" type="checkbox" ${c[k]?'checked':''}> ${n}</label>`).join('')}${fields.map(([k,n])=>`<label>${n}<input class="hm-field" name="${k}" type="number" min="0" max="100" value="${c[k]}"></label>`).join('')}<label>送礼回复方式<select class="hm-field" name="giftReplyMode"><option value="0" ${c.giftReplyMode===0?'selected':''}>系统预设话术</option><option value="1" ${c.giftReplyMode===1?'selected':''}>像正常聊天一样回复</option><option value="2" ${c.giftReplyMode===2?'selected':''}>混合</option></select></label><button class="hm-action">保存设置</button></form>`;
+        body.innerHTML=`<form class="hm-form"><h3>自动互动设置</h3><p>每轮聊天活动结束约 2.5 秒后，依次判断买我的心愿、自购、添加对方心愿、直接送礼，一轮最多一个动作。买心愿从整张清单随机抽取，允许对方余额为负。买心愿与直接送礼每天共限 3 件；自购每天 3 件；心愿卡每天 3 张。礼物送达后按回复概率等待 0.9–2.4 秒回话。</p>${switches.map(([k,n])=>`<label><input name="${k}" type="checkbox" ${c[k]?'checked':''}> ${n}</label>`).join('')}${fields.map(([k,n])=>`<label>${n}<input class="hm-field" name="${k}" type="number" min="0" max="100" value="${c[k]}"></label>`).join('')}<label>送礼回复方式<select class="hm-field" name="giftReplyMode"><option value="0" ${c.giftReplyMode===0?'selected':''}>系统预设话术</option><option value="1" ${c.giftReplyMode===1?'selected':''}>像正常聊天一样回复</option><option value="2" ${c.giftReplyMode===2?'selected':''}>混合</option></select></label><button class="hm-action">保存设置</button></form>`;
         const form=body.querySelector('form');form.onsubmit=e=>{e.preventDefault();const next={giftReplyMode:form.giftReplyMode.value};switches.forEach(([k])=>next[k]=form[k].checked);fields.forEach(([k])=>next[k]=form[k].value);H.settings.save(next);toast('设置已保存');render('settings');};
     }
     trigger.onclick=()=>{render('market');dialog.showModal();};
     trigger.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();trigger.click();}};
     dialog.addEventListener('close',()=>trigger.focus());
-    badge();H.flush();setInterval(()=>{H.wish.checkPending();H.flush();},1000);
+    badge();H.flush();setInterval(()=>H.flush(),1000);
     let lastPartner=null, autoTimer=null, chatBaselineReady=false;
     const baselineTimer=setInterval(()=>{
         const welcome=document.getElementById('welcome-animation');
