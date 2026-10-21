@@ -80,7 +80,7 @@
         onGiftCard: (gift, event) => putMessage(giftCard(gift), gift.side === 'out' ? 'user' : partner(), 'heart-gift', event),
         onWishCard: (wish, event) => putMessage(wishCard(wish), partner(), 'heart-wish', event),
         onReply: (text, meta, event) => putMessage(esc(text), partner(), 'normal', event),
-        changed: () => { badge(); if (dialog.open) render(active); }
+        changed: () => refreshMarketState()
     });
 
     const style = document.createElement('style');
@@ -104,7 +104,25 @@
     document.body.append(dialog);
     const body = dialog.querySelector('.hm-body'), wallet = dialog.querySelector('.hm-wallet'), tabs = dialog.querySelector('.hm-tabs');
     dialog.querySelector('.hm-close').onclick = () => dialog.close();
-    let active = 'market', category = '全部', query = '', wishSide = 'ta', boxSide = 'in';
+    let active = 'market', category = '全部', query = '', wishSide = 'my', boxSide = 'in';
+    let view = 'tab', listSnapshot = '';
+    function snapshot() {
+        if (active === 'wish') return JSON.stringify([wishSide,H.wish.myList(),H.wish.taList()]);
+        if (active === 'box') return JSON.stringify([boxSide,H.box.list()]);
+        if (active === 'ledger') return JSON.stringify([H.ledger.list('earn'),H.ledger.list('ask')]);
+        return '';
+    }
+    function refreshMarketState() {
+        badge();
+        if (!dialog.open) return;
+        const w=H.wallet.get();
+        const header=`<span>${esc(mine())} ${money(w.myBalance)}</span><span>${esc(partner())} ${money(w.systemBalance)}</span>`;
+        if(wallet.innerHTML!==header)wallet.innerHTML=header;
+        // Background checks must never discard a detail view or an unfinished form.
+        if(view==='tab'&&['wish','box','ledger'].includes(active)&&snapshot()!==listSnapshot){
+            const top=body.scrollTop;render(active);body.scrollTop=top;
+        }
+    }
     const tabDefs = [['market','市集'],['wish','心愿单'],['box','心意柜'],['ledger','账本'],['settings','设置']];
     function badge() {
         let node = trigger.querySelector('.hm-badge'), count = H.wish.unread();
@@ -112,12 +130,13 @@
         if (node) { node.textContent = count > 9 ? '9+' : count; node.hidden = !count; }
     }
     function render(tab = active) {
-        active = tab; const w = H.wallet.get();
+        active = tab; view = 'tab'; const w = H.wallet.get();
         wallet.innerHTML = `<span>${esc(mine())} ${money(w.myBalance)}</span><span>${esc(partner())} ${money(w.systemBalance)}</span>`;
         tabs.innerHTML = tabDefs.map(([id,name]) => `<button data-tab="${id}" class="${id===tab?'active':''}">${name}${id==='wish'&&H.wish.unread()?' · '+H.wish.unread():''}</button>`).join('');
         tabs.querySelectorAll('button').forEach(b => b.onclick = () => { if (b.dataset.tab === 'wish') H.wish.read(); render(b.dataset.tab); });
         body.replaceChildren();
         ({ market: marketView, wish: wishView, box: boxView, ledger: ledgerView, settings: settingsView }[tab])();
+        listSnapshot = snapshot();
         badge();
     }
     const media = g => `<div class="hm-media">${g.img ? `<img src="${esc(g.img)}" alt="">` : esc(g.emoji || '🎁')}</div>`;
@@ -134,13 +153,22 @@
         tools.querySelector('input').oninput=e=>{query=e.target.value;draw();}; tools.querySelector('select').onchange=e=>{category=e.target.value;draw();}; tools.querySelector('button').onclick=customView; draw();
     }
     function buyView(g) {
+        view = 'form';
         body.innerHTML = `<div class="hm-form">${media(g)}<h3>${esc(g.name)} · ¥${Number(g.price).toFixed(2)}</h3><label>赠言<textarea class="hm-field" maxlength="60" rows="4">${esc(g.wish||'')}</textarea></label><button class="hm-action">送给${esc(partner())}</button><button class="hm-action hm-secondary">加入我的心愿单</button><button class="hm-action hm-secondary">返回</button></div>`;
         const [send, addWish, back] = body.querySelectorAll('button');
         send.onclick=()=>{send.disabled=true;try{if(H.buy(g.id,body.querySelector('textarea').value)){H.flush();toast(`已送出「${g.name}」`);render('box');}else send.disabled=false;}catch(e){toast(e.message);send.disabled=false;}};
-        addWish.onclick=()=>{if(H.wish.myAdd(g))toast(`已把「${g.name}」加入心愿单`);else toast('这件已经在心愿单里');};
+        addWish.onclick=()=>{
+            addWish.disabled=true;
+            try {
+                const added=H.wish.myAdd(g);
+                wishSide='my';render('wish');
+                toast(added?`已把「${g.name}」加入我的心愿单`:'这件已经在我的心愿单里');
+            } catch(error) {addWish.disabled=false;toast(error.message||'心愿保存失败，请检查浏览器存储空间');}
+        };
         back.onclick=()=>render('market');
     }
     function customView() {
+        view = 'form';
         body.innerHTML = `<form class="hm-form"><h3>添加自定义商品</h3><label>名称<input class="hm-field" name="giftName" maxlength="40" required></label><label>价格（元）<input class="hm-field" name="price" type="number" min="0" step="0.01" required></label><label>分类<select class="hm-field" name="cat">${H.cats.map(x=>`<option>${esc(x)}</option>`).join('')}</select></label><label>Emoji<input class="hm-field" name="emoji" maxlength="8" value="🎁"></label><label>赠言<textarea class="hm-field" name="wish" maxlength="60">送给你</textarea></label><label>图片（可选）<input class="hm-field" name="image" type="file" accept="image/*"></label><button class="hm-action">保存商品</button><button type="button" class="hm-action hm-secondary">返回</button></form>`;
         const form=body.querySelector('form');
         form.onsubmit=async e=>{e.preventDefault();let img='',file=form.image.files[0];if(file){if(file.size>900000){toast('图片过大，请选择 900KB 以内的图片');return;}img=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(file);});}try{H.goods.addCustom({name:form.giftName.value,price:form.price.value,cat:form.cat.value,emoji:form.emoji.value,img,wish:form.wish.value});render('market');}catch(err){toast(err.message);}};
@@ -168,10 +196,12 @@
         body.querySelector('button').onclick=askView;
     }
     function askView() {
+        view = 'form';
         body.innerHTML=`<form class="hm-form"><h3>申请心意币</h3><label>到账方<select class="hm-field" name="side"><option value="my">${esc(mine())}</option><option value="ta">${esc(partner())}</option></select></label><label>金额（元）<input class="hm-field" name="amount" type="number" min="0.01" step="0.01" required></label><button class="hm-action">立即到账</button><button type="button" class="hm-action hm-secondary">返回</button></form>`;
         const form=body.querySelector('form');form.onsubmit=e=>{e.preventDefault();if(H.wallet.ask(form.side.value,form.amount.value)){toast('心意币已到账');render('ledger');}};form.querySelector('[type=button]').onclick=()=>render('ledger');
     }
     function settingsView() {
+        view = 'form';
         const c=H.config, fields=[['giftInPct','直接送我礼物概率（%）'],['wlBuyPct','买下我的心愿概率（%）'],['selfPct','给自己买概率（%）'],['wlAddPct','添加心愿概率（%）'],['wishChatPct','心愿卡发到聊天概率（%）'],['giftReplyPct','送礼回话概率（%）']];
         const switches=[['giftInOn','允许对方送我礼物'],['wlOn','启用双向心愿单'],['selfOn','允许对方给自己买'],['wishChatOn','对方心愿可发到聊天'],['selfChatOn','对方自购可发到聊天'],['giftReplyOn','我送礼后对方可回话'],['nightOn','夜间免打扰（23:00–07:00）']];
         body.innerHTML=`<form class="hm-form"><h3>自动互动设置</h3>${switches.map(([k,n])=>`<label><input name="${k}" type="checkbox" ${c[k]?'checked':''}> ${n}</label>`).join('')}${fields.map(([k,n])=>`<label>${n}<input class="hm-field" name="${k}" type="number" min="0" max="100" value="${c[k]}"></label>`).join('')}<label>送礼回复方式<select class="hm-field" name="giftReplyMode"><option value="0" ${c.giftReplyMode===0?'selected':''}>系统预设话术</option><option value="1" ${c.giftReplyMode===1?'selected':''}>像正常聊天一样回复</option><option value="2" ${c.giftReplyMode===2?'selected':''}>混合</option></select></label><button class="hm-action">保存设置</button></form>`;
