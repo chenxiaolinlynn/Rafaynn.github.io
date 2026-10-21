@@ -12,7 +12,7 @@
     const pick = list => list[Math.floor(Math.random() * list.length)];
     const interval = () => Date.now() + 180000 + Math.random() * 180000;
     const api = () => window.musicTogetherBridge;
-    let state = null, acceptTimer = null, saving = false, ready = false;
+    let state = null, acceptTimer = null, ready = false;
     let allowSwitch = true;
     try { state = JSON.parse(localStorage.getItem(KEY) || 'null'); allowSwitch = localStorage.getItem(PREF) !== 'false'; } catch {}
     // A previous page's active session ended at its last checkpoint, not at this load.
@@ -25,10 +25,12 @@
     const style = el('style');
     style.textContent = `
 #player:not(.collapsed){height:190px}#lt-entry{border:0;border-radius:12px;background:var(--message-received-bg);color:var(--accent-color);padding:8px;font:inherit;font-size:12px;cursor:pointer;touch-action:manipulation}
-#lt-panel{width:min(420px,calc(100% - 28px));max-height:85dvh;overflow:auto;margin:auto;padding:24px;border:1px solid var(--border-color);border-radius:24px;background:var(--secondary-bg);color:var(--text-primary)}
-#lt-panel::backdrop{background:rgba(0,0,0,.35)}#lt-panel h2{font-size:20px;margin:0}#lt-panel header{display:flex;align-items:center;justify-content:space-between}#lt-panel button{font:inherit;border:0;border-radius:12px;padding:10px 14px;cursor:pointer;background:var(--message-received-bg);color:var(--text-primary)}#lt-panel .lt-primary{background:var(--accent-color);color:var(--message-sent-text)}
+#lt-panel,#lt-summary{width:min(420px,calc(100% - 28px));max-height:85dvh;overflow:auto;margin:auto;padding:24px;border:1px solid var(--border-color);border-radius:24px;background:var(--secondary-bg);color:var(--text-primary)}
+#lt-panel::backdrop,#lt-summary::backdrop{background:rgba(0,0,0,.35)}#lt-panel h2{font-size:20px;margin:0}#lt-panel header{display:flex;align-items:center;justify-content:space-between}#lt-panel button{font:inherit;border:0;border-radius:12px;padding:10px 14px;cursor:pointer;background:var(--message-received-bg);color:var(--text-primary)}#lt-panel .lt-primary{background:var(--accent-color);color:var(--message-sent-text)}
 .lt-people{display:flex;align-items:center;justify-content:center;gap:20px;margin:24px 0 16px}.lt-person{text-align:center;font-size:13px}.lt-face{width:48px;height:48px;border-radius:50%;object-fit:cover;background:var(--message-received-bg);display:inline-flex;align-items:center;justify-content:center;font-size:24px}.lt-heart{color:var(--accent-color)}
 #lt-time{text-align:center;font-size:28px;color:var(--accent-color);font-variant-numeric:tabular-nums}#lt-status,#lt-song{font-size:13px;text-align:center;line-height:1.7;overflow-wrap:anywhere;color:var(--text-secondary)}#lt-panel label{display:flex;align-items:center;gap:8px;margin:20px 0;font-size:13px}#lt-panel input{accent-color:var(--accent-color)}#lt-actions{display:flex;gap:10px;justify-content:center;margin-top:20px}
+#chat-container .system-message:has(.lt-record){display:none}
+#lt-summary .lt-record{border:0;padding:0;margin:0 auto}#lt-summary button{display:block;width:100%;margin-top:20px;padding:12px;border:0;border-radius:12px;font:inherit;background:var(--accent-color);color:var(--message-sent-text);cursor:pointer}
 .lt-record{max-width:360px;margin:12px auto;padding:20px;border:1px solid var(--border-color);border-radius:20px;background:var(--secondary-bg);color:var(--text-primary);text-align:left}.lt-record h3{margin:0;text-align:center;color:var(--accent-color)}.lt-record p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}.lt-record .lt-people{margin:12px 0}.lt-record small{color:var(--text-secondary)}
 `;
     document.head.append(style);
@@ -47,6 +49,15 @@
         await api()?.playUrl(url); if (state) { delete state.recommended; persist(); } recommendation.hidden = true;
     }); recommendation.hidden = true;
     panel.append(header, people, time, song, status, label, recommendation, actions); document.body.append(panel);
+    const summary = el('dialog'); summary.id = 'lt-summary'; summary.setAttribute('aria-label', '本次一起听');
+    const summaryBody = el('div');
+    summary.append(summaryBody, btn('完成', () => summary.close())); document.body.append(summary);
+    summary.addEventListener('close', () => {
+        if (state?.status === 'ended' && state.id === summary.dataset.recordId) {
+            state = null; persist(); render();
+        }
+        summaryBody.replaceChildren(); entry.focus();
+    });
     const entry = btn('♫ 邀请对方一起听', () => { render(); panel.showModal(); }); entry.id = 'lt-entry';
     // The existing player uses dragging; controls must not start a drag.
     entry.addEventListener('pointerdown', e => e.stopPropagation());
@@ -87,7 +98,7 @@
     }
     function start() {
         if (!ready || !currentSession() || !api()) { status.textContent = '播放器正在准备，请稍后重试'; return; }
-        if (state) { status.textContent = '上次记录正在保存，请稍后重试'; return; }
+        if (state) { status.textContent = '请先关闭上次一起听的汇总'; return; }
         if (!api().list().length) { status.textContent = '歌单为空，请先添加歌曲'; return; }
         state = { id: 'listen-' + crypto.randomUUID(), session: currentSession(), ...identity(), status: 'inviting', tracks: [] };
         if (!persist()) { state = null; return; }
@@ -139,32 +150,22 @@
             if (success) { status.textContent = `${partner}想和你听《${target.title}》`; showNotification(status.textContent, 'info'); }
         }
     }
-    function recordMessage(record) {
-        const card = el('div', undefined, 'lt-record'); card.append(el('h3', '♫ 一起听歌记录'));
+    function recordCard(record) {
+        const card = el('div', undefined, 'lt-record'); card.append(el('h3', '♫ 本次一起听'));
         const pair = el('div', undefined, 'lt-people'); peopleView(pair, record); card.append(pair);
         const seconds = Math.max(0, Math.floor((record.endedAt - record.startedAt) / 1000));
         card.append(el('p', `一起听了 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒 · ${record.tracks.length} 首歌`));
         record.tracks.forEach((track, i) => card.append(el('p', `${i + 1}. ${track.title}`)));
         if (!record.tracks.length) card.append(el('p', '本次没有成功播放的歌曲'));
         card.append(el('small', record.reason));
-        return { id: record.id, type: 'system', text: card.outerHTML, timestamp: new Date(record.endedAt) };
+        return card;
     }
-    async function deliver() {
-        if (!ready || saving || state?.status !== 'ended') return;
-        saving = true; const record = state;
-        try {
-            const msg = recordMessage(record);
-            if (currentSession() === record.session) {
-                if (!messages.some(x => x.id === msg.id)) addMessage(msg);
-                await saveData();
-            } else {
-                const key = `${APP_PREFIX}${record.session}_chatMessages`;
-                const saved = await localforage.getItem(key) || [];
-                if (!saved.some(x => x.id === msg.id)) { saved.push(msg); await localforage.setItem(key, saved); }
-            }
-            if (state?.id === record.id) { state = null; persist(); render(); }
-        } catch { status.textContent = '同听记录保存失败，将自动重试'; }
-        finally { saving = false; }
+    function deliver() {
+        if (!ready || state?.status !== 'ended' || summary.open) return;
+        summary.dataset.recordId = state.id;
+        summaryBody.replaceChildren(recordCard(state));
+        if (panel.open) panel.close();
+        summary.showModal();
     }
     function finish(reason, endedAt = Date.now()) {
         clearTimeout(acceptTimer);
