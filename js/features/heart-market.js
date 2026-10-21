@@ -106,7 +106,7 @@ window.HeartMarket = (function () {
     function walletGet() {
         return atomic(() => {
         let w = store.get(WALLET_KEY);
-        if (!w || !Number.isSafeInteger(w.myBalance) || !Number.isSafeInteger(w.systemBalance) || w.myBalance < 0 || w.systemBalance < 0
+        if (!w || !Number.isSafeInteger(w.myBalance) || !Number.isSafeInteger(w.systemBalance) || w.myBalance < 0
             || (w.myBalance === 99999999 && w.systemBalance === 99999999)) {  // 出厂测试值哨兵
             w = { myBalance: 520000, systemBalance: 520000 };
             store.set("wallet-5200-migrated", true);
@@ -121,7 +121,7 @@ window.HeartMarket = (function () {
         return w;
         });
     }
-    function walletSet(w) { if (![w.myBalance, w.systemBalance].every(n => Number.isSafeInteger(n) && n >= 0)) throw Error('余额必须是非负整数'); store.set(WALLET_KEY, { myBalance: w.myBalance, systemBalance: w.systemBalance }); }
+    function walletSet(w) { if (![w.myBalance, w.systemBalance].every(Number.isSafeInteger) || w.myBalance < 0) throw Error('余额必须是整数，我方余额不能为负数'); store.set(WALLET_KEY, { myBalance: w.myBalance, systemBalance: w.systemBalance }); }
     // 统一增减口：任何功能动钱都走这里，并自动记账本。dMy/dTa 单位为分，可为负。
     function walletChange(dMy, dTa, src) {
         if (![dMy, dTa].every(Number.isSafeInteger)) throw Error('金额无效');
@@ -533,7 +533,7 @@ window.HeartMarket = (function () {
     function wishMyAdd(g) {
         const a = wishLoad(WL_MY);
         if (a.some(x => x.giftId === g.id)) return false;
-        a.unshift({...wishSnap(g), checkAfter: Date.now()+randInt(3000,8000), initialChecked:false}); wishSave(WL_MY, a.slice(0, CFG.wishMax));
+        a.unshift(wishSnap(g)); wishSave(WL_MY, a.slice(0, CFG.wishMax));
         return true;
     }
     function wishTaRemove(id) { wishSave(WL_TA, wishLoad(WL_TA).filter(x => x.giftId !== id)); }
@@ -595,7 +595,7 @@ window.HeartMarket = (function () {
     function giftPayload(gift, side, wish, entry) {
         return { side: side === 'out' ? 'out' : 'in', special: 'gift', giftSelf: side === 'self' ? 1 : 0,
             giftId: gift.id, giftName: gift.name, giftEmoji: gift.emoji, giftImg: gift.img || '',
-            giftPrice: gift.price, giftWish: wish, giftCat: gift.cat, giftBoxId: entry.id, ts: Date.now() };
+            giftPrice: gift.price, giftWish: wish, giftCat: gift.cat, giftBoxId: entry.id, satisfied: side==='out'&&wishTaHas(gift.id), ts: Date.now() };
     }
     function queueGift(gift, side, wish, delay = 0) {
         const entry = boxAdd(gift, side, wish);
@@ -632,7 +632,10 @@ window.HeartMarket = (function () {
                 if (event.kind === 'gift' && !event.payload.silent) await host.onGiftCard(event.payload, event);
                 else if (event.kind === 'wish') await host.onWishCard(event.payload, event);
                 else if (event.kind === 'reply') await host.onReply(event.payload.text, event.payload, event);
-                atomic(() => store.set('outbox', (store.get('outbox') || []).filter(x => x.id !== event.id)));
+                atomic(() => {
+                    if(event.kind==='gift'&&!event.payload.silent) giftReplyFeedback({id:event.payload.giftId},event.payload.giftBoxId,!!event.payload.satisfied);
+                    store.set('outbox', (store.get('outbox') || []).filter(x => x.id !== event.id));
+                });
                 host.changed();
             }
         } finally { flushing = false; }
@@ -651,7 +654,7 @@ window.HeartMarket = (function () {
         const entry = queueGift(gift, side, wish);
         if (side === 'out') {
             if (satisfied) wishTaRemove(gift.id);
-            giftReplyFeedback(gift, entry.id, satisfied);
+
         }
         return true;
     }
@@ -670,20 +673,12 @@ window.HeartMarket = (function () {
     function purchaseWish(item) {
         if (!item) return false;
         const list=wishLoad(WL_MY),fen=toFen(item.price||0);
-        if (!list.some(x=>x.giftId===item.giftId)||walletGet().systemBalance<fen) return false;
+        if (!list.some(x=>x.giftId===item.giftId)) return false;
         walletChange(0,-fen,'买下心愿');
         wishSave(WL_MY,list.filter(x=>x.giftId!==item.giftId));
         dayIncr('hm-gift-daily-');
         deliverInGift({...item,id:item.giftId},item.wish,randInt(CFG.deliverMinMs,CFG.deliverMaxMs));
         return true;
-    }
-    function checkPendingWishes() {
-        if (!host.ready()||host.isNight()||host.rateLimitFull()||!CFG.wlOn||!CFG.giftInOn||dayCount('hm-gift-daily-')>=CFG.autoDayMax) return;
-        const list=wishLoad(WL_MY),item=list.find(x=>x.initialChecked===false&&x.checkAfter<=Date.now());
-        if (!item) return;
-        item.initialChecked=true;
-        wishSave(WL_MY,list);
-        if (Math.random()*100<CFG.wlBuyPct) purchaseWish(item);
     }
     // 宿主在每轮聊天活动结束后调用一次（先过夜间/限流两道总闸，再按顺序掷四把骰子）
     function autoTick() {
@@ -696,8 +691,7 @@ window.HeartMarket = (function () {
         if (CFG.wlOn && CFG.giftInOn && !autoCapped) {
             const myWl = wishLoad(WL_MY);
             if (myWl.length && Math.random() * 100 < CFG.wlBuyPct) {
-                const affordable=myWl.filter(item=>toFen(item.price||0)<=walletGet().systemBalance);
-                if (purchaseWish(pick(affordable))) return;
+                if (purchaseWish(pick(myWl))) return;
             }
         }
         // 2) TA 给自己买（10%）
@@ -828,7 +822,7 @@ window.HeartMarket = (function () {
             restore: mutate(() => store.set('market-off', [])),
             custom: () => store.get(CUSTOM_KEY) || [] },
         wish: {
-            checkPending: mutate(checkPendingWishes), myList: () => wishLoad(WL_MY), myAdd: mutate(wishMyAdd), myRemove: mutate(wishMyRemove),
+            myList: () => wishLoad(WL_MY), myAdd: mutate(wishMyAdd), myRemove: mutate(wishMyRemove),
             taList: () => wishLoad(WL_TA), taRemove: mutate(wishTaRemove), taHas: wishTaHas,
             unread: () => wishLoad(WL_TA).filter(x => x.tm > (store.get(pKey('wish-read')) || 0)).length,
             read: mutate(() => store.set(pKey('wish-read'), Date.now()))
