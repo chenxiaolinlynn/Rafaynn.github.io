@@ -173,6 +173,6 @@
         const latest=[...messages].reverse().find(x=>x.sender!=='user'&&x.type==='normal');
         if(!latest||String(latest.id)===String(lastPartner))return;
         lastPartner=latest.id;clearTimeout(autoTimer);
-        autoTimer=setTimeout(()=>{H.autoTick();H.flush();},2500);
+        autoTimer=setTimeout(()=>{H.transfers.auto();H.autoTick();H.flush();},2500);
     },1000);
 })();
