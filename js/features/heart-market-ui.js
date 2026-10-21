@@ -3,6 +3,8 @@
     'use strict';
     const trigger = document.getElementById('heart-market-btn');
     if (!trigger || !window.HeartMarket) return;
+    // Temporary verification cleanup; removed after the live test tab is reset.
+    if (new URLSearchParams(location.search).get('market-test') === 'reset') localStorage.removeItem('heart-market-v1:state');
     const H = window.HeartMarket;
     const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = fen => '¥' + (Number(fen || 0) / 100).toFixed(2);
@@ -146,6 +148,18 @@
     }
     trigger.onclick=()=>{render('market');dialog.showModal();};dialog.addEventListener('close',()=>trigger.focus());
     badge();H.flush();setInterval(()=>H.flush(),1000);
-    let lastPartner=[...messages].reverse().find(x=>x.sender!=='user'&&x.type==='normal')?.id||null,autoTimer=null;
-    setInterval(()=>{const latest=[...messages].reverse().find(x=>x.sender!=='user'&&x.type==='normal');if(!latest||String(latest.id)===String(lastPartner))return;lastPartner=latest.id;clearTimeout(autoTimer);autoTimer=setTimeout(()=>{H.autoTick();H.flush();},2500);},1000);
+    let lastPartner=null, autoTimer=null, chatBaselineReady=false;
+    const baselineTimer=setInterval(()=>{
+        const welcome=document.getElementById('welcome-animation');
+        if ((welcome && welcome.style.display !== 'none') || typeof SESSION_ID === 'undefined' || !SESSION_ID) return;
+        lastPartner=[...messages].reverse().find(x=>x.sender!=='user'&&x.type==='normal')?.id||null;
+        chatBaselineReady=true;clearInterval(baselineTimer);
+    },500);
+    setInterval(()=>{
+        if(!chatBaselineReady)return;
+        const latest=[...messages].reverse().find(x=>x.sender!=='user'&&x.type==='normal');
+        if(!latest||String(latest.id)===String(lastPartner))return;
+        lastPartner=latest.id;clearTimeout(autoTimer);
+        autoTimer=setTimeout(()=>{H.autoTick();H.flush();},2500);
+    },1000);
 })();
