@@ -24,6 +24,7 @@ window.HeartMarket = (function () {
 
     /* ---------------- 可调参数（mochi 默认值） ---------------- */
     const CFG = {
+        rpAutoOn: true, rpAutoPct: 4, rpReplyPct: 60, rpReplyMode: 0,
         giftInOn: true, wlOn: true, selfOn: true, wishChatOn: true, selfChatOn: true,
         nightOn: false, nightStart: 23, nightEnd: 7, messageLimit: 0,
         walletDefaultFen: 52000,   // 初始余额：双方各 ¥520
@@ -727,21 +728,61 @@ window.HeartMarket = (function () {
         }
     }
 
-    function transferSend(tx) {
-        if (!tx || !Number.isSafeInteger(tx.fen) || tx.fen <= 0 || !tx.id || !tx.session) throw Error('金额无效');
-        const list = store.get('transfers') || [];
-        const existing = list.find(x => x.id === tx.id);
+    // v2 packets escrow funds until received; legacy direct transfers are already settled.
+    function transferList() { return (store.get('transfers') || []).map(x => x.version === 2 ? x : {...x,status:'received',side:'out',settled:true}); }
+    function transferRandom(side = 'in') {
+        const balance = walletGet()[side === 'out' ? 'myBalance' : 'systemBalance'];
+        if (balance < 1) return 0;
+        const r = Math.random(), special = [520,1314,5200,13140,52000,131400].filter(n => n <= balance);
+        return r < .4 && special.length ? pick(special) : randInt(1, r < .8 ? Math.min(balance,52000) : balance);
+    }
+    function transferSend(input) {
+        if (!input || !Number.isSafeInteger(input.fen) || input.fen <= 0 || !input.id || !input.session) throw Error('金额无效');
+        const list = transferList(), existing = list.find(x => x.id === input.id);
         if (existing) return existing;
-        if (walletGet().myBalance < tx.fen) throw Error('心意币余额不足');
-        walletChange(-tx.fen, tx.fen, '红包转账');
-        list.push(copy(tx)); store.set('transfers', list);
-        return tx;
+        const side = input.side === 'in' ? 'in' : 'out';
+        if (walletGet()[side === 'out' ? 'myBalance' : 'systemBalance'] < input.fen) throw Error('心意币余额不足');
+        walletChange(side === 'out' ? -input.fen : 0, side === 'in' ? -input.fen : 0, '红包发出');
+        const tx = {...input,side,version:2,status:'pending',createdAt:Date.now(),claimAt:Date.now()+randInt(2500,5000),expiresAt:Date.now()+86400000,firstChecked:false,nextCheck:0,delivered:false,synced:false};
+        list.push(tx); store.set('transfers',list); return tx;
+    }
+    function transferSettle(id,status) {
+        const list = transferList(), tx = list.find(x => x.id === id);
+        if (!tx || tx.status !== 'pending' || !['received','returned','expired'].includes(status)) return tx;
+        if (Date.now() >= tx.expiresAt) status = 'expired';
+        const toMy = status === 'received' ? tx.side === 'in' : tx.side === 'out';
+        walletChange(toMy ? tx.fen : 0, toMy ? 0 : tx.fen, status === 'received' ? '红包领取' : status === 'expired' ? '红包过期退回' : '红包退回');
+        tx.status=status;tx.synced=false;tx.settledAt=Date.now();tx.feedbackAt=Date.now()+randInt(400,1200);
+        tx.feedbackId=tx.id+1;tx.replyId=tx.id+2;
+        if(tx.side==='out' && status==='received' && Math.random()*100<CFG.rpReplyPct){
+            const chat = CFG.rpReplyMode===1 || (CFG.rpReplyMode===2 && Math.random()<.4);
+            tx.replyText = String((chat ? pick(host.getCardPool()) : null) || pick(['收到你的心意啦，谢谢你。','红包收下啦，想抱抱你。','谢谢，今天也被你惦记着。']));
+        }
+        store.set('transfers',list);return tx;
+    }
+    function transferTick() {
+        for(const tx of transferList()) {
+            if(tx.status!=='pending')continue;
+            if(Date.now()>=tx.expiresAt){transferSettle(tx.id,'expired');continue;}
+            if(tx.side!=='out'||Date.now()<tx.claimAt)continue;
+            let outcome;
+            if(!tx.firstChecked){const r=Math.random();outcome=r<.2?'returned':r<.9?'received':null;}
+            else if(Date.now()>=tx.nextCheck)outcome=Math.random()<.08?'received':null;
+            else continue;
+            if(outcome)transferSettle(tx.id,outcome);
+            else {const list=transferList(),item=list.find(x=>x.id===tx.id);item.firstChecked=true;item.nextCheck=Date.now()+60000;store.set('transfers',list);}
+        }
+    }
+    function transferAuto() {
+        if(!CFG.rpAutoOn||!host.ready()||host.isNight()||host.rateLimitFull()||dayCount('rp-daily-')>=5||Math.random()*100>=CFG.rpAutoPct)return;
+        const fen=transferRandom();if(!fen)return;
+        const id=Date.now()*1000+randInt(0,899);
+        transferSend({id,messageId:id,session:String(host.sessionId()),partnerName:host.partnerName(),side:'in',fen,note:'给你一点小心意',cover:'heart'});dayIncr('rp-daily-');
     }
     function transferUpdate(id, changes) {
-        const list = store.get('transfers') || [], tx = list.find(x => x.id === id);
-        if (!tx) return;
-        for (const key of ['claimed', 'delivered', 'synced']) if (key in changes) tx[key] = !!changes[key];
-        store.set('transfers', list); return tx;
+        const list=transferList(),tx=list.find(x=>x.id===id);if(!tx)return;
+        for(const key of ['delivered','synced','feedbackSent'])if(key in changes)tx[key]=!!changes[key];
+        store.set('transfers',list);return tx;
     }
     function wishMyRemove(id) { wishSave(WL_MY, wishLoad(WL_MY).filter(x => x.giftId !== id)); }
     function claim(id) {
@@ -760,7 +801,7 @@ window.HeartMarket = (function () {
     }
     return {
         init, config: CFG, cats: CATS, flush,
-        transfers: { list: () => store.get("transfers") || [], send: mutate(transferSend), update: mutate(transferUpdate) },
+        transfers: { list: transferList, random: transferRandom, send: mutate(transferSend), update: mutate(transferUpdate), settle: mutate(transferSettle), tick: mutate(transferTick), auto: mutate(transferAuto) },
         wallet: { get: walletGet, set: mutate(walletSet), change: mutate(walletChange), ask: mutate(walletAsk) },
         ledger: { list: ledgerLoad },
         goods: { list: goodsList, addCustom: mutate(goodsAddCustom), setOff: mutate(goodsSetOff), find: findGoods,
