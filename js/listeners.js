@@ -2486,8 +2486,8 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
             for(const song of items){if(!existing.has(song.url)){songs.push(song);existing.add(song.url);added++;}}
             savePlaylist();if(songs.length===added && added)loadSong(0);return added;
         },
-        list: () => songs.map(s => ({title: s.title, url: s.url})),
-        current: () => songs[currentIndex] ? {title: songs[currentIndex].title, url: songs[currentIndex].url} : null,
+        list: () => songs.map(s => ({title: s.title, url: s.url, sub:s.sub, cover:s.cover})),
+        current: () => songs[currentIndex] ? {title: songs[currentIndex].title, url: songs[currentIndex].url, sub:songs[currentIndex].sub, cover:songs[currentIndex].cover} : null,
         async playUrl(url) {
             const index = songs.findIndex(s => s.url === url);
             if (index < 0) { showNotification('歌曲已从歌单移除', 'warning'); return false; }
@@ -2776,9 +2776,9 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
             if (realIndex === currentIndex) div.classList.add('playing');
 
             const highlightText = (text, term) => {
-                if (!term) return text;
-                const regex = new RegExp(`(${term})`, 'gi');
-                return text.replace(regex, '<span class="highlight">$1</span>');
+                const span = document.createElement('span');
+                span.textContent = String(text || '');
+                return span.innerHTML;
             };
 
             const displayTitle = highlightText(song.title, searchTerm);
