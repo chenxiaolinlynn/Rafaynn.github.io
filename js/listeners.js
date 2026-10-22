@@ -2399,6 +2399,13 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
     let searchTerm = '';
     let isSearchVisible = false;
 
+    let sourceVersion=0;
+    let sourcePromise=Promise.resolve(true);
+    async function playResolvedSong(){
+        const version=sourceVersion;
+        if(!await sourcePromise || version!==sourceVersion)throw Error('音源未就绪或已切换歌曲');
+        return audio.play();
+    }
     // Diagnostic results are session-only: network failures are not permanent removals.
     const sourceHealth = new Map();
     let scanRunning = false;
@@ -2443,7 +2450,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
         scanRunning = true;
         scanCancelled = false;
         scanDone = 0;
-        const urls = [...new Set(songs.map(song => song.url).filter(Boolean))];
+        const urls = [...new Set(songs.map(song => song.url).filter(url=>url&&!url.startsWith('netease:')))];
         scanTotal = urls.length;
         let cursor = 0;
         refreshSourceStatus();
@@ -2474,13 +2481,18 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
     // Public adapter for the optional listen-together module.
     window.musicTogetherBridge = {
         cycleMode: () => document.getElementById('mode-btn').click(),
+        importSongs(items) {
+            const existing=new Set(songs.map(s=>s.url));let added=0;
+            for(const song of items){if(!existing.has(song.url)){songs.push(song);existing.add(song.url);added++;}}
+            savePlaylist();if(songs.length===added && added)loadSong(0);return added;
+        },
         list: () => songs.map(s => ({title: s.title, url: s.url})),
         current: () => songs[currentIndex] ? {title: songs[currentIndex].title, url: songs[currentIndex].url} : null,
         async playUrl(url) {
             const index = songs.findIndex(s => s.url === url);
             if (index < 0) { showNotification('歌曲已从歌单移除', 'warning'); return false; }
             currentIndex = index; loadSong(index);
-            try { await audio.play(); return true; }
+            try { await playResolvedSong(); return true; }
             catch { showNotification('播放失败，请检查歌曲链接或点击播放重试', 'error'); return false; }
         }
     };
@@ -2504,7 +2516,18 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
         document.getElementById('music-title').innerText = song.title;
         document.getElementById('music-subtitle').innerText = song.sub;
         
-        if (song.url) audio.src = song.url;
+        const version=++sourceVersion;
+        audio.pause();
+        if (song.url && song.url.startsWith('netease:')) {
+            audio.removeAttribute('src');audio.load();
+            sourcePromise=window.NeteaseMusic.resolve(song.url).then(url=>{
+                if(version===sourceVersion)audio.src=url;
+                return version===sourceVersion;
+            }).catch(error=>{if(version===sourceVersion)showNotification(error.message,'warning');return false;});
+        } else {
+            if(song.url)audio.src= song.url;
+            sourcePromise=Promise.resolve(true);
+        }
         window.dispatchEvent(new Event('music-track-loaded'));
         updatePlaylistHighlight();
     }
@@ -2522,7 +2545,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
             document.getElementById('icon-pause').style.display = 'none';
             player.classList.remove('playing');
         } else {
-            const playPromise = audio.play();
+            const playPromise = playResolvedSong();
             if (playPromise !== undefined) {
                 playPromise.then(_ => {
                     isPlaying = true;
@@ -2539,18 +2562,20 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
 
     function nextSong(auto = false) {
         if (songs.length === 0) return;
+        const shouldPlay=auto===true||isPlaying;
         if (playMode === 'single') { loadSong(currentIndex); }
         else if (playMode === 'shuffle') currentIndex = Math.floor(Math.random() * songs.length);
         else currentIndex = (currentIndex + 1) % songs.length;
         if (playMode !== 'single') loadSong(currentIndex);
-        if (auto === true || isPlaying) audio.play().catch(() => showNotification('点击播放继续听歌', 'info'));
+        if (shouldPlay) playResolvedSong().catch(() => showNotification('点击播放继续听歌', 'info'));
     }
 
     function prevSong() {
+        const shouldPlay=isPlaying;
         if (songs.length === 0) return;
         currentIndex = (currentIndex - 1 + songs.length) % songs.length;
         loadSong(currentIndex);
-        if (isPlaying) audio.play();
+        if (shouldPlay) playResolvedSong().catch(()=>showNotification('点击播放继续听歌','info'));
     }
 
     function savePlaylist() {
@@ -2591,6 +2616,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
         header.innerHTML = `
     <div class="pl-header-title">˙°ʚᕱ⑅ᕱɞ°˙</div>
     <div class="pl-header-actions">
+        <button class="pl-icon-btn" id="pl-netease-btn" title="我的网易云" style="width:auto;font-size:12px">网易云</button>
         <button class="pl-icon-btn" id="pl-check-btn" style="width:auto;padding:0 8px;font-size:12px">检测音源</button>
         <button class="pl-icon-btn" id="pl-manage-btn" title="歌单管理"><i class="fas fa-folder-open"></i></button>
         <button class="pl-icon-btn ${isSearchVisible ? 'active' : ''}" id="pl-search-toggle" title="搜索"><i class="fas fa-search"></i></button>
@@ -2599,6 +2625,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
     <input type="file" id="pl-import-input" accept=".json" style="display:none">
 `;
         playlist.appendChild(header);
+        header.querySelector('#pl-netease-btn').onclick=event=>{event.stopPropagation();window.NeteaseMusic.open();};
         header.querySelector('#pl-check-btn').addEventListener('click', event => {
             event.stopPropagation();
             checkSources();
@@ -2784,7 +2811,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
                         if (songs.length > 0) {
                             currentIndex = realIndex % songs.length;
                             loadSong(currentIndex);
-                            if (isPlaying) audio.play();
+                            if (isPlaying) playResolvedSong();
                         } else {
                             audio.pause();
                             isPlaying = false;
@@ -2801,7 +2828,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
                 currentIndex = realIndex;
                 loadSong(currentIndex);
                 if (!isPlaying) togglePlay();
-                else audio.play();
+                else playResolvedSong().catch(()=>showNotification('点击播放继续听歌','info'));
             });
 
             const status = div.querySelector('[data-source-index]');
