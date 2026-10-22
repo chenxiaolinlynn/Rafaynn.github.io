@@ -118,6 +118,13 @@ window.HeartMarket = (function () {
             store.set('wallet-5200-migrated', true);
             ledgerAdd('earn', 468000, 468000, '初始心意币补足至5200');
         }
+        if (!store.get('wallet-ta-10000-20261022')) {
+            const adjustment = 1000000 - w.systemBalance;
+            w.systemBalance = 1000000;
+            store.set(WALLET_KEY, w);
+            store.set('wallet-ta-10000-20261022', true);
+            ledgerAdd('earn', 0, adjustment, '祁煜心愿币余额调整至10000');
+        }
         return w;
         });
     }
