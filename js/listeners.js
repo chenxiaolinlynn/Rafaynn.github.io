@@ -1733,6 +1733,7 @@ const savedCover = safeGetItem(APP_PREFIX + 'playerCover');
     // Public adapter for the optional listen-together module.
     window.musicTogetherBridge = {
         cycleMode: () => document.getElementById('mode-btn').click(),
+        getMode: () => playMode,
         importSongs(items) {
             const existing=new Set(songs.map(s=>s.url));let added=0;
             for(const song of items){if(!existing.has(song.url)){songs.push(song);existing.add(song.url);added++;}}
@@ -2218,13 +2219,14 @@ playlist.style.top = (rect.top + (player.classList.contains('collapsed') ? 65 : 
 
     const _mode_btnEl = document.getElementById('mode-btn');
     if (_mode_btnEl) _mode_btnEl.addEventListener('click', () => {
-        if (playMode === 'sequence') { playMode = 'single'; }
-        else if (playMode === 'single') { playMode = 'shuffle'; }
+        if (playMode === 'sequence') { playMode = 'shuffle'; }
+        else if (playMode === 'shuffle') { playMode = 'single'; }
         else { playMode = 'sequence'; }
         document.getElementById('icon-loop').style.display   = playMode === 'sequence' ? 'block' : 'none';
         document.getElementById('icon-single').style.display = playMode === 'single'   ? 'block' : 'none';
         document.getElementById('icon-shuffle').style.display= playMode === 'shuffle'  ? 'block' : 'none';
         const labels = { sequence: '顺序播放', single: '单曲循环', shuffle: '随机播放' };
+        window.dispatchEvent(new CustomEvent('music-mode-changed', {detail: playMode}));
         showNotification(labels[playMode], 'info', 1000);
     });
 
