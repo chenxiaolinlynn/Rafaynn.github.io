@@ -1,0 +1,1 @@
+{"name":"private-netease-backend","version":"1.0.0","private":true,"scripts":{"start":"node server.cjs"},"engines":{"node":">=22"},"dependencies":{"@neteasecloudmusicapienhanced/api":"4.41.1"}}
