@@ -340,6 +340,9 @@
         </div>
         <div class="input-area">
     <button id="collapse-expand-btn" title="展开更多" style="display:none;width:36px;height:36px;border:none;border-radius:50%;cursor:pointer;background:rgba(var(--accent-color-rgb),0.12);color:var(--accent-color);font-size:14px;transition:all 0.25s;flex-shrink:0;align-items:center;justify-content:center;" onclick="window.toggleCollapsedExtras && window.toggleCollapsedExtras()"><i class="fas fa-chevron-up"></i></button>
+    <div class="chat-tools">
+        <button class="input-btn" id="chat-tools-toggle" type="button" title="更多功能" aria-label="更多功能" aria-expanded="false" aria-controls="chat-tools-menu"><i class="fas fa-plus" aria-hidden="true"></i></button>
+        <div id="chat-tools-menu" hidden role="group" aria-label="聊天功能">
     <button class="input-btn collapse-hideable" id="red-envelope-btn" type="button" title="红包转账" aria-label="红包转账"><i class="fas fa-envelope" aria-hidden="true"></i></button>
     <button class="attachment-btn input-btn collapse-hideable" id="attachment-btn" title="发送图片"><i class="fas fa-image"></i></button>
     
@@ -348,6 +351,8 @@
     </button>
 
     <button class="input-btn collapse-hideable" id="survey-btn" type="button" title="问卷调查" aria-label="问卷调查"><i class="fas fa-clipboard-list" aria-hidden="true"></i></button>
+        </div>
+    </div>
     <textarea class="message-input" id="message-input" placeholder="" rows="1"></textarea>
     
     <div class="input-buttons">
@@ -2254,5 +2259,26 @@
     <script src="js/features/check-in-engine.js?v=2"></script>
     <script src="js/features/check-in.js?v=3"></script>
     <script src="js/features/incoming-requests.js?v=2"></script>
+    <style>
+.chat-tools{position:relative;flex:none}
+#chat-tools-menu[hidden]{display:none!important}
+#chat-tools-menu{position:absolute;bottom:calc(100% + 14px);left:0;width:280px;max-width:calc(100vw - 32px);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:16px;background:var(--secondary-bg,#fff);border:1px solid var(--border-color,#eee);border-radius:22px;box-shadow:0 8px 32px #0002;z-index:1000}
+#chat-tools-menu .input-btn{width:100%;height:72px;border-radius:16px;flex-direction:column;gap:9px;padding:10px 4px;flex-shrink:0}
+#chat-tools-menu .input-btn::after{content:attr(title);font-size:11px;line-height:1.3;white-space:nowrap;font-family:var(--font-family,inherit)}
+#chat-tools-menu .input-btn i{font-size:20px}
+#chat-tools-toggle[aria-expanded=true]{color:var(--accent-color);background:rgba(var(--accent-color-rgb),.12)}
+#chat-tools-toggle i{transition:transform .15s}
+#chat-tools-toggle[aria-expanded=true] i{transform:rotate(45deg)}
+    </style>
+    <script>
+    (() => {
+        const trigger=document.getElementById('chat-tools-toggle'),menu=document.getElementById('chat-tools-menu');
+        const close=()=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');};
+        trigger.addEventListener('click',()=>{const open=menu.hidden;menu.hidden=!open;trigger.setAttribute('aria-expanded',String(open));});
+        menu.addEventListener('click',event=>{if(event.target.closest('button'))close();});
+        document.addEventListener('click',event=>{if(!event.target.closest('.chat-tools'))close();});
+        document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.hidden){close();trigger.focus();}});
+    })();
+    </script>
 </body>
 </html>
