@@ -48,7 +48,7 @@ s.log.unshift({at:now,text:who+'照顾了可颂 · '+specs[action][0].split(' ')
 if(!save(s))return;if(room.open){render();tell('可颂'+specs[action][1]);const img=room.querySelector('img');img.classList.remove('pet-bounce');void img.offsetWidth;img.classList.add('pet-bounce');}}
 entry.onclick=()=>{render();room.showModal();};room.querySelector('[data-close]').onclick=()=>room.close();
 room.querySelector('#pet-auto').onchange=e=>{const s=advance(read());s.auto=e.target.checked;save(s);};
-window.addEventListener('chat-message-added',e=>{const m=e.detail;if(!m||m.type!=='normal'||m.sender==='user'||m.sender==='system'||m.musicInteraction||document.hidden)return;const hour=new Date().getHours();if(hour>=23||hour<7)return;const s=advance(read());if(!s.auto||s.sleeping||Date.now()-s.partnerAt<1800000||Math.random()>=.1)return;const pool=['pet'];if(s.food<85)pool.push('feed');if(s.clean<85)pool.push('clean');if(s.energy>=45)pool.push('play');else pool.push('sleep');care(pool[Math.floor(Math.random()*pool.length)],partner(),true);});
+window.addEventListener('chat-message-added',e=>{const m=e.detail;if(!m||m.type!=='normal'||m.sender==='user'||m.sender==='system'||m.musicInteraction||document.hidden)return;const s=advance(read());if(!s.auto||s.sleeping||Date.now()-s.partnerAt<1800000||Math.random()>=.1)return;const pool=['pet'];if(s.food<85)pool.push('feed');if(s.clean<85)pool.push('clean');if(s.energy>=45)pool.push('play');else pool.push('sleep');care(pool[Math.floor(Math.random()*pool.length)],partner(),true);});
 setInterval(()=>{if(room.open&&!document.hidden)render();},60000);
 window.addEventListener('storage',e=>{if(e.key===key()&&room.open)render();});
 })();
