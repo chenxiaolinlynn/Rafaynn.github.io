@@ -75,7 +75,7 @@
     panel.append(header, people, time, song, status, label, recommendation, actions); document.body.append(panel);
     const preferences = el('details'), prefTitle = el('summary', '音乐互动设置'); preferences.append(prefTitle);
     const inputs = {};
-    const names = {accept:'接受邀请（%）', refuse:'拒绝邀请（%）', change:'要求换歌（%）', request:'主动邀请（%，最高 30）', cooldown:'邀请冷却（分钟）', queue:'未邀请时预订下一首（%）', next:'歌曲结束：换另一首（%）', random:'歌曲结束：随机选歌（%）', mode:'歌曲结束：改变模式（%）', pause:'歌曲开始：暂停互动（%）'};
+    const names = {accept:'接受邀请（%）', refuse:'拒绝邀请（%）', change:'要求换歌（%）', request:'一起听时请求换歌（%，最高 30）', cooldown:'邀请冷却（分钟）', queue:'一起听时预订下一首（%）', next:'歌曲结束：换另一首（%）', random:'歌曲结束：随机选歌（%）', mode:'歌曲结束：改变模式（%）', pause:'歌曲开始：暂停互动（%）'};
     for (const [key, name] of Object.entries(names)) {
         const row=el('label', name), input=el('input'); input.type='number'; input.min='0'; input.max=key==='request'?'30':key==='cooldown'?'1440':'100'; input.step='1'; input.value=config[key]; input.setAttribute('aria-label',name); input.style.width='70px'; inputs[key]=input; row.append(input); preferences.append(row);
     }
@@ -183,7 +183,7 @@
         else { log(`暂时拒绝了${identity().partner}的听歌邀请 · ${request.track.title}`); render(); }
     }
     function maybeMusicRequest() {
-        if (!ready || !currentSession() || incoming || state?.status==='inviting' || state?.status==='ended') return;
+        if (!ready || !active() || !allowSwitch || incoming) return;
         if (requestSession!==currentSession()) {
             requestSession=currentSession();
             try { lastRequest=Number(localStorage.getItem(KEY+'_request_'+requestSession)) || 0; } catch { lastRequest=0; }
@@ -246,11 +246,12 @@
             else if (roll<config.next+config.random+config.mode) { api().cycleMode(); log(identity().partner+'换了播放模式'); }
         }
         // Explicit next-track reservations take priority, but still consume one end-of-song roll.
-        if (queued?.session===currentSession()) { target=list.find(t=>t.url===queued.url) || target; queued=null; }
+        if (active() && allowSwitch && queued?.session===currentSession()) target=list.find(t=>t.url===queued.url) || target;
+        queued=null;
         if (!target) return false;
         const version=trackVersion, session=currentSession();
         switchTimer=setTimeout(() => {
-            if (version!==trackVersion || session!==currentSession() || !audio.ended) return;
+            if (!active() || !allowSwitch || version!==trackVersion || session!==currentSession() || !audio.ended) return;
             api().playUrl(target.url);
         },300);
         return true;
