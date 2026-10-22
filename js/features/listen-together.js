@@ -32,7 +32,7 @@
         if (state?.status === 'active') { (state.events ||= []).push(event); persist(); }
         try { const history=JSON.parse(localStorage.getItem(historyKey()) || '[]'); history.push(event); localStorage.setItem(historyKey(),JSON.stringify(history.slice(-100))); } catch {}
     }
-    const active = () => state?.status === 'active' && state.session === currentSession();
+    const active = () => state?.status === 'active' && state.userInvited === true && state.session === currentSession();
     function clearPlaybackTimers() { clearTimeout(pauseTimer); clearTimeout(resumeTimer); clearTimeout(switchTimer); }
 
     const api = () => window.musicTogetherBridge;
@@ -152,24 +152,26 @@
             if (state?.id!==id || state.session!==currentSession()) return;
             const roll=Math.random()*100, alternatives=api().list().filter(t=>t.url!==track.url);
             if (roll < config.accept || (roll >= config.accept+config.refuse && !alternatives.length)) {
-                begin(track);
+                begin(track, true);
             } else if (roll < config.accept+config.refuse) {
                 say(pick(['这首现在不想听嘛','待会儿再听好不好？']));
                 log(identity().partner+'这次没答应'); state=null; persist(); render();
             } else {
-                say('这首听腻啦，换一首嘛～'); state=null; persist(); render(); offer(pick(alternatives));
+                say('这首听腻啦，换一首嘛～'); state=null; persist(); render(); offer(pick(alternatives), true);
             }
         },1500+Math.random()*2500);
     }
-    async function begin(track) {
-        if (!active()) state={id:'listen-'+crypto.randomUUID(),session:currentSession(),...identity(),status:'active',tracks:[],events:[],startedAt:Date.now(),lastSeen:Date.now()};
+    async function begin(track, userInvited = false) {
+        if (!active() && !userInvited) return;
+        if (!active()) state={id:'listen-'+crypto.randomUUID(),session:currentSession(),...identity(),status:'active',userInvited:true,tracks:[],events:[],startedAt:Date.now(),lastSeen:Date.now()};
         persist(); render();
         const success=await api().playUrl(track.url);
         if (active() && !success) status.textContent='已接受邀请，请点击播放重试或更换歌曲';
     }
-    function offer(track) {
+    function offer(track, fromUserInvitation = false) {
+        if (!active() && !fromUserInvitation) return;
         if (!track || incoming || state?.status==='inviting' || state?.status==='ended') return;
-        incoming={track,session:currentSession()};
+        incoming={track,session:currentSession(),userInvited:fromUserInvitation || active()};
         lastRequest=Date.now(); requestSession=currentSession();
         try { localStorage.setItem(KEY+'_request_'+requestSession,String(lastRequest)); } catch {}
         requestText.textContent=audio.paused ? `${identity().partner}想和你一起听《${track.title}》` : `${identity().partner}想邀请你切换到《${track.title}》`;
@@ -179,7 +181,7 @@
     function answerRequest(accept) {
         const request=incoming; incoming=null; requestPanel.close();
         if (!request || request.session!==currentSession()) return;
-        if (accept) { log(`接受了${identity().partner}的听歌邀请 · ${request.track.title}`); begin(request.track); }
+        if (accept) { log(`接受了${identity().partner}的听歌邀请 · ${request.track.title}`); begin(request.track, request.userInvited === true); }
         else { log(`暂时拒绝了${identity().partner}的听歌邀请 · ${request.track.title}`); render(); }
     }
     function maybeMusicRequest() {
