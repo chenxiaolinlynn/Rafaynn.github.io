@@ -54,7 +54,17 @@ function renderSettings(){
  for(const[k,t]of [['call','跨桌面来电（%）'],['chat','跨桌面聊天请求（%）']]){const i=node('input');i.type='number';i.min=0;i.max=30;i.step=.1;i.value=cross[k];crossInputs[k]=field(settingsBody,t,i);}
  settingsBody.append(button('保存设置',()=>{const next={...c,frequency:frequency.value};for(const[k,i]of Object.entries(inputs)){if(i.type==='checkbox')next[k]=i.checked;else{const v=Number(i.value);if(!i.value.trim()||!Number.isFinite(v)||v<0||v>Number(i.max))return toast('请输入范围内的数字');next[k]=v;}}for(const i of Object.values(crossInputs))if(!i.value.trim()||!Number.isFinite(Number(i.value))||Number(i.value)<0||Number(i.value)>30)return toast('跨桌面概率请输入 0–30');window.IncomingRequests?.configure({frequency:frequency.value,call:Number(crossInputs.call.value),chat:Number(crossInputs.chat.value)});engine.data.config=next;if(persist())toast('查岗设置已保存');}));
  settingsBody.append(node('p','本地查岗只针对当前聊天；跨桌面每分钟检查其他会话，依次判断来电、查岗、聊天请求。只有一个会话时，不会触发跨桌面请求。页面关闭后不会继续计时。'));
- settingsBody.append(button('开启系统通知',async()=>{const result=await window.SiteNotifications.enable();toast(result.message);}));
+ const notificationStatus=node('p','点击后会在这里显示通知权限结果');notificationStatus.setAttribute('role','status');notificationStatus.setAttribute('aria-live','polite');
+ const notificationButton=button('开启系统通知',async()=>{
+  notificationButton.disabled=true;notificationStatus.textContent='正在请求通知权限…';
+  try{
+   if(!window.SiteNotifications?.enable)throw Error('通知模块尚未加载，请刷新页面后重试');
+   const result=await window.SiteNotifications.enable();
+   notificationStatus.textContent=result.message;notificationButton.textContent=result.ok?'通知已开启':'重试开启系统通知';
+  }catch(error){notificationStatus.textContent='无法开启：'+(error.message||'请刷新后重试');}
+  finally{notificationButton.disabled=false;}
+ });
+ settingsBody.append(notificationButton,notificationStatus);
  const pending=engine.pending();if(pending)settingsBody.append(button('查看待回答查岗',()=>openAnswer(pending.id)));
  const list=node('div');list.append(node('h3','共用题库'));
  for(const q of engine.data.questions){const row=node('div');row.className='ck-question';const on=node('input');on.type='checkbox';on.checked=q.enabled;on.onchange=()=>{q.enabled=on.checked;persist();};field(row,q.text,on);row.append(node('small',q.type==='action'?'互动题':q.options?.length?'单选题':'填空题'),button('编辑',()=>editQuestion(q)));list.append(row);}
