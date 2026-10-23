@@ -824,8 +824,9 @@ function manageAutoSendTimer() {
                 }
             }
 
-            DOMElements.html.setAttribute('data-theme', settings.isDarkMode ? 'dark': 'light');
-            DOMElements.themeToggle.innerHTML = settings.isDarkMode ? '<i class="fas fa-sun"></i>': '<i class="fas fa-moon"></i>';
+            settings.isDarkMode = false;
+            DOMElements.html.setAttribute('data-theme', 'light');
+            
             DOMElements.partner.name.textContent = settings.partnerName;
             DOMElements.me.name.textContent = settings.myName;
             DOMElements.partner.status.textContent = settings.partnerStatus || '在线';
