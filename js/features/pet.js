@@ -18,7 +18,7 @@ const style=document.createElement('style');style.textContent=`
 @media(max-width:480px){.pet-home img{height:240px}}
 `;document.head.append(style);
 const room=document.createElement('dialog');room.id='pet-room';room.setAttribute('aria-label','可颂的小房间');
-room.innerHTML=`<header><h2>可颂的小房间</h2><button data-close aria-label="关闭宠物房间">×</button></header><div class="pet-home"><img src="assets/kesong.svg" alt="焦糖卷毛小狗可颂"><p role="status" id="pet-status">今天也一起照顾可颂吧</p></div><p class="pet-note" id="pet-progress"></p><div class="pet-stats"></div><div class="pet-actions"></div><details class="pet-details"><summary>共同照顾记录</summary><p id="pet-ranking"></p><ul class="pet-log"></ul></details><details class="pet-details"><summary>照顾设置</summary><label><input id="pet-auto" type="checkbox"> 允许对方主动照顾可颂</label><p>每 30 分钟一格，40% 概率代管；离线回来按时间顺序补算，单次最多 40 格，超出的旧格子不积压。进入房间另有 30% 概率照顾，夜间也可以照顾</p><p>点击「让对方照顾」无需概率，仍遵守宠物状态和动作冷却</p></details><p class="pet-note">照顾免费，不扣心愿币。可颂不会因离线死亡；状态按真实时间衰减，长期见底可能生病，完成护理即可恢复。数据保存在当前浏览器，手机与电脑暂不同步。</p>`;
+room.innerHTML=`<header><h2>可颂的小房间</h2><button data-close aria-label="关闭宠物房间">×</button></header><div class="pet-home"><img src="assets/kesong.svg" alt="焦糖卷毛小狗可颂"><p role="status" id="pet-status">今天也一起照顾可颂吧</p></div><p class="pet-note" id="pet-progress"></p><div class="pet-stats"></div><div class="pet-actions"></div><details class="pet-details"><summary>共同照顾记录</summary><p id="pet-ranking"></p><ul class="pet-log"></ul></details><details class="pet-details"><summary>照顾设置</summary><label><input id="pet-auto" type="checkbox"> 允许对方主动照顾可颂</label><p>每 30 分钟一格，10% 概率代管；离线回来按时间顺序补算，单次最多 40 格，超出的旧格子不积压。进入房间另有 30% 概率照顾，夜间也可以照顾</p><p>点击「让对方照顾」无需概率，仍遵守宠物状态和动作冷却</p></details><p class="pet-note">照顾免费，不扣心愿币。可颂不会因离线死亡；状态按真实时间衰减，长期见底可能生病，完成护理即可恢复。数据保存在当前浏览器，手机与电脑暂不同步。</p>`;
 document.body.append(room);
 const scope=()=>typeof SESSION_ID!=='undefined'?String(SESSION_ID):'default';
 const key=()=> 'CHAT_APP_V3_pet_kesong_'+scope();
@@ -81,7 +81,7 @@ if(apply(s,a,true,t,random))return false;
 if(random()<.4)record(s,partner()+'：宝宝，可颂这边有我照顾呢',t);return true;}
 function settle(s,now=Date.now(),random=Math.random){
 const slots=Math.floor(Math.max(0,now-s.lpc)/(H/2));const start=s.lpc;let count=0;
-for(let i=0;i<Math.min(slots,40);i++){const t=start+(i+1)*H/2;advance(s,t);if(s.auto&&random()<.4&&partnerAct(s,t,random))count++;}
+for(let i=0;i<Math.min(slots,40);i++){const t=start+(i+1)*H/2;advance(s,t);if(s.auto&&random()<.1&&partnerAct(s,t,random))count++;}
 // 超过 20 小时的格子不积压，避免反复打开补刷照顾。
 s.lpc=start+slots*(H/2);advance(s,now);milestones(s);if(count)record(s,partner()+'后台照顾了可颂 '+count+' 次',now);return s;}
 function save(s){try{localStorage.setItem(key(),JSON.stringify(s));return true;}catch{tell('存储空间不足，照顾记录未保存');return false;}}
