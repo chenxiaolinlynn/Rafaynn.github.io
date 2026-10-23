@@ -420,13 +420,6 @@ const tourSteps = [
         position: 'top'
     },
     {
-        element: '#theme-toggle',
-        title: "🌙 日 / 夜模式切换",
-        content: "这个按钮可以快速<b>切换白天 / 夜晚</b>模式。<br><br>夜晚模式下整体变成深色背景，对眼睛更友好，睡前聊天必备！✨",
-        position: 'bottom',
-        onBefore: () => { if (isTourActive) hideModal(DOMElements.settingsModal.modal); }
-    },
-    {
         element: '#favorites-btn',
         title: "⭐ 收藏夹",
         content: "长按或点击一条消息，会弹出操作菜单，可以把消息<b>收藏</b>起来。<br><br>所有收藏的消息都会保存在这个收藏夹里，随时可以翻阅回味～",
