@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="css/styles.css">
 
     <style id="css-live-preview-style"></style>
+<link rel="stylesheet" href="css/companion.css?v=1">
 </head>
 <body>
 <div id="splash-declaration">
@@ -2239,7 +2240,7 @@
     <script src="js/features/reply-library.js"></script>
     <script src="js/features/theme-editor.js"></script>
     <script src="js/features/group-chat.js"></script>
-    <script src="js/features/call.js"></script>
+    <script src="js/features/call.js?v=companion-1"></script>
 
     <!-- == 合并模块 == -->
     <script src="js/games.js"></script> 
@@ -2279,5 +2280,8 @@
         document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.hidden){close();trigger.focus();}});
     })();
     </script>
+<script src="js/features/companion-host.js?v=1"></script>
+<script src="js/features/companion-diary.js?v=1"></script>
+<script src="js/features/companion.js?v=1"></script>
 </body>
 </html>

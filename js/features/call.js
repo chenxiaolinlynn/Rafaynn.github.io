@@ -660,6 +660,7 @@ html:not([data-theme="dark"])[data-color-theme="black-white"] .message-sent{
     }
 
     function showIncomingCall() {
+        if (document.getElementById("companion-page")?.classList.contains("active") || document.querySelector("#companion-inviting-overlay,#companion-incoming-overlay")) return;
         if (!S.enabled || S.active) return;
         const ov = document.getElementById('call-incoming-overlay');
         if (!ov) return;
