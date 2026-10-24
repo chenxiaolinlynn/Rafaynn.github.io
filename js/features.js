@@ -461,10 +461,7 @@ function showEmojiTab() {
                 });
                 playSound('send');
                 
-                const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-                const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-                if (window._pendingReplyTimer) clearTimeout(window._pendingReplyTimer);
-                window._pendingReplyTimer = setTimeout(() => { window._pendingReplyTimer = null; simulateReply(); }, randomDelay);
+                window._triggerDelayedReply();
             }
             document.getElementById('user-sticker-picker').classList.remove('active');
         };
@@ -518,9 +515,7 @@ function showPokeTab() {
                 type: 'system'
             });
             document.getElementById('user-sticker-picker').classList.remove('active');
-            const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-            const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-            setTimeout(simulateReply, randomDelay);
+            window._triggerDelayedReply();
         };
         area.appendChild(btn);
     });
@@ -736,9 +731,7 @@ function showPokeTab() {
                             playSound('send');
                             currentReplyTo = null;
                             updateReplyPreview();
-                            const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-                            const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-                            setTimeout(simulateReply, randomDelay);
+                            window._triggerDelayedReply();
 
 
                             closeModal();

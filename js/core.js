@@ -1521,7 +1521,7 @@ if (!isBatchMode && type === 'normal') window._triggerDelayedReply();
             });
             const delayRange = settings.replyDelayMax - settings.replyDelayMin;
             const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-            setTimeout(simulateReply, batchMessages.length * 300 + randomDelay);
+            setTimeout(() => window._triggerDelayedReply(), batchMessages.length * 300);
             isBatchMode = false; batchMessages = [];
             DOMElements.batchBtn.classList.remove('active'); DOMElements.batchPreview.style.display = 'none';
             const placeholder = "";
@@ -1648,7 +1648,7 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
             if (Math.random() < 0.03) {
                 // ── 对方拍一拍：调用提取的通用函数（同时供 /测试拍一拍 指令使用）──
                 if (typeof window._triggerPartnerPoke === 'function') window._triggerPartnerPoke();
-                return;
+                if (options.delayElapsed !== true) return;
             }
 
             const replyCount = Math.random() < 0.75 ? 1: (Math.random() < 0.95 ? 2: 3);

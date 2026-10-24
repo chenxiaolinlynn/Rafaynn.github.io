@@ -194,9 +194,7 @@ if (target.classList.contains('delete-btn')) {
                 }
                 hideModal(DOMElements.pokeModal.modal);
                 DOMElements.pokeModal.input.value = '';
-                const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-                const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-                setTimeout(simulateReply, randomDelay);
+                window._triggerDelayedReply();
             });
 
 
@@ -2446,9 +2444,7 @@ playlist.style.top = (rect.top + (player.classList.contains('collapsed') ? 65 : 
                             playSound('send');
                             currentReplyTo = null;
                             updateReplyPreview();
-                            const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-                            const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-                            setTimeout(simulateReply, randomDelay);
+                            window._triggerDelayedReply();
 
 
                             closeModal();
