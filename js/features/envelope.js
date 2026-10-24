@@ -54,6 +54,27 @@ async function checkEnvelopeStatus() {
     }
 }
 
+// Proactive letters use the shared 48–96 hour scheduler in moments.js.
+// Adapted from user-provided channel-ing-chat; preserve existing outbox records.
+let partnerLetterBusy = false;
+window._generatePartnerLetter = async function() {
+    if (partnerLetterBusy) return false;
+    partnerLetterBusy = true;
+    try {
+        if (!Array.isArray(customReplies) || !customReplies.some(r => typeof r === 'string' && r.trim())) return false;
+        await loadEnvelopeData();
+        const content = generateEnvelopeReplyText();
+        if (!content.trim()) return false;
+        const now = Date.now();
+        const letter = { id:'partner_'+now+'_'+Math.random().toString(36).slice(2,6), refId:null, originalContent:null, content, receivedTime:now, timestamp:now, isNew:true, fromPartner:true };
+        envelopeData.inbox.push(letter);
+        await localforage.setItem(getStorageKey('envelopeData'), envelopeData);
+        renderEnvelopeLists();
+        showEnvelopeReplyPopup(letter);
+        return true;
+    } finally { partnerLetterBusy = false; }
+};
+
 function showEnvelopeReplyPopup(letter) {
     const existing = document.getElementById('envelope-reply-popup');
     if (existing) existing.remove();
@@ -65,8 +86,8 @@ function showEnvelopeReplyPopup(letter) {
         <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:26px;">💌</span>
             <div>
-                <div style="font-size:14px;font-weight:700;color:var(--text-primary);">收到了一封回信</div>
-                <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;opacity:0.8;">Ta 给你写了回信，快去看看吧~</div>
+                <div style="font-size:14px;font-weight:700;color:var(--text-primary);">${letter.fromPartner ? '收到了一封主动来信' : '收到了一封回信'}</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;opacity:0.8;">${letter.fromPartner ? '对方给你写了一封信，打开看看吧' : 'Ta 给你写了回信，快去看看吧~'}</div>
             </div>
         </div>
         <div style="display:flex;gap:8px;">
@@ -128,7 +149,8 @@ window.openEnvelopeAndViewReply = function(replyId) {
 };
 
 function generateEnvelopeReplyText() {
-    const sourcePool = [...customReplies];
+    const sourcePool = (Array.isArray(customReplies) ? customReplies : []).filter(r => typeof r === 'string' && r.trim());
+    if (!sourcePool.length) return ''; 
     const sentenceCount = Math.floor(Math.random() * (12 - 8 + 1)) + 8;
     let replyContent = "";
     for (let i = 0; i < sentenceCount; i++) {
@@ -227,7 +249,7 @@ function renderInboxList() {
             <div class="env-letter-header">
                 <div class="env-letter-header-from">
                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px;margin-right:3px;"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 7L2 7"/></svg>
-                    收到 · ${date}
+                    ${letter.fromPartner ? '主动来信' : '收到回信'} · ${date}
                     ${isNew ? '<span style="background:rgba(255,255,255,0.3);color:#fff;font-size:9px;padding:1px 5px;border-radius:6px;margin-left:6px;">新</span>' : ''}
                 </div>
                 <div class="env-stamp">
@@ -257,9 +279,9 @@ window.viewEnvLetter = function(section, id) {
     editingEnvId = id;
     editingEnvSection = section;
 
-    document.getElementById('env-view-title').textContent = section === 'outbox' ? '寄出的信' : '收到的回信';
+    document.getElementById('env-view-title').textContent = section === 'outbox' ? '寄出的信' : (letter.fromPartner ? '对方的来信' : '收到的回信');
 
-    const dateObj = letter.timestamp ? new Date(letter.timestamp) : new Date();
+    const dateObj = new Date(letter.timestamp || letter.receivedTime || letter.sentTime || Date.now());
     const y = dateObj.getFullYear();
     const mo = String(dateObj.getMonth()+1).padStart(2,'0');
     const d = String(dateObj.getDate()).padStart(2,'0');

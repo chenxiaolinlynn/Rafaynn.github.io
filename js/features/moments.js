@@ -199,7 +199,7 @@ async function _checkAction(){
         const KEY=getStorageKey(_M_COOLDOWN_KEY),now=Date.now();
         const next=await localforage.getItem(KEY);if(next!==null&&now<next)return;
         await localforage.setItem(KEY,now+_M_CD_MIN+Math.random()*(_M_CD_MAX-_M_CD_MIN));
-        if(Math.random()<0.40){if(typeof window._generatePartnerLetter==='function')window._generatePartnerLetter();}
+        if(Math.random()<0.40){if(typeof window._generatePartnerLetter==='function')await window._generatePartnerLetter();}
         if(Math.random()<0.70){await generatePartnerMoment();}
     }catch(e){console.warn('[Moments] _checkAction 失败',e);}
 }
