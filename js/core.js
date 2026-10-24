@@ -1428,50 +1428,7 @@ const addMessage = (message) => {
                 currentReplyTo = null;
                 updateReplyPreview();
 
-if (!isBatchMode && type === 'normal') {
-    const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-    const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-
-    const chance = Math.max(0, Math.min(1, Number(settings.readNoReplyChance) || 0));
-    const shouldIgnore = settings.allowReadNoReply && (Math.random() < chance);
-
-    const readDelay = 1500 + Math.random() * 2500;
-                setTimeout(() => {
-        let changed = false;
-        messages.forEach(msg => {
-            if (msg.sender === 'user' && msg.status !== 'read') {
-                msg.status = 'read';
-                changed = true;
-            }
-        });
-        if (changed) { _updateReadReceiptsDOM(); throttledSaveData(); }
-    }, readDelay);
-
-    if (window._pendingReplyTimer) clearTimeout(window._pendingReplyTimer);
-    window._pendingReplyTimer = null;
-
-            if (!shouldIgnore) {
-        if (settings.typingIndicatorEnabled) {
-            const tiWrapper = document.getElementById('typing-indicator-wrapper');
-            const tiLabel = document.getElementById('typing-indicator-label');
-            const tiAvatar = document.getElementById('typing-indicator-avatar');
-            if (tiLabel) tiLabel.textContent = (settings.partnerName || '对方') + ' 正在输入';
-            if (tiWrapper) { 
-                positionTypingIndicator(); 
-                tiWrapper.style.display = 'block'; 
-            }
-            if (tiAvatar) {
-                const partnerImg = DOMElements.partner.avatar.querySelector('img');
-                tiAvatar.innerHTML = partnerImg ? `<img src="${partnerImg.src}">` : '<i class="fas fa-user"></i>';
-            }
-            if (DOMElements.chatContainer) DOMElements.chatContainer.scrollTop = DOMElements.chatContainer.scrollHeight;
-        }
-        window._pendingReplyTimer = setTimeout(() => {
-            window._pendingReplyTimer = null;
-            simulateReply();
-        }, randomDelay);
-    }
-}
+if (!isBatchMode && type === 'normal') window._triggerDelayedReply();
 };
 
             if (imageFile) {
@@ -1590,6 +1547,51 @@ if (!isBatchMode && type === 'normal') {
             ro.observe(inputArea);
         })();
 
+window._triggerDelayedReply = function() {
+    const delayRange = settings.replyDelayMax - settings.replyDelayMin;
+    const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
+
+    const chance = Math.max(0, Math.min(1, Number(settings.readNoReplyChance) || 0));
+    const shouldIgnore = settings.allowReadNoReply && (Math.random() < chance);
+
+    const readDelay = 1500 + Math.random() * 2500;
+                setTimeout(() => {
+        let changed = false;
+        messages.forEach(msg => {
+            if (msg.sender === 'user' && msg.status !== 'read') {
+                msg.status = 'read';
+                changed = true;
+            }
+        });
+        if (changed) { _updateReadReceiptsDOM(); throttledSaveData(); }
+    }, readDelay);
+
+    if (window._pendingReplyTimer) clearTimeout(window._pendingReplyTimer);
+    window._pendingReplyTimer = null;
+
+            if (!shouldIgnore) {
+        if (settings.typingIndicatorEnabled) {
+            const tiWrapper = document.getElementById('typing-indicator-wrapper');
+            const tiLabel = document.getElementById('typing-indicator-label');
+            const tiAvatar = document.getElementById('typing-indicator-avatar');
+            if (tiLabel) tiLabel.textContent = (settings.partnerName || '对方') + ' 正在输入';
+            if (tiWrapper) { 
+                positionTypingIndicator(); 
+                tiWrapper.style.display = 'block'; 
+            }
+            if (tiAvatar) {
+                const partnerImg = DOMElements.partner.avatar.querySelector('img');
+                tiAvatar.innerHTML = partnerImg ? `<img src="${partnerImg.src}">` : '<i class="fas fa-user"></i>';
+            }
+            if (DOMElements.chatContainer) DOMElements.chatContainer.scrollTop = DOMElements.chatContainer.scrollHeight;
+        }
+        window._pendingReplyTimer = setTimeout(() => {
+            window._pendingReplyTimer = null;
+            simulateReply();
+        }, randomDelay);
+    }
+
+};
         window.simulateReply = function() {
             function showTypingIndicator() {
                 if (!settings.typingIndicatorEnabled) return;
@@ -1635,6 +1637,7 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                      throttledSaveData();
                 }
             }
+            if (window.ThrowEgg && Math.random() < 0.03) window.ThrowEgg.partnerThrow();
             if (Math.random() < 0.03) {
                 // ── 对方拍一拍：调用提取的通用函数（同时供 /测试拍一拍 指令使用）──
                 if (typeof window._triggerPartnerPoke === 'function') window._triggerPartnerPoke();
