@@ -8,8 +8,7 @@ const page=document.getElementById('companion-page');const minimize=()=>{page.cl
 resume.onclick=()=>{page.classList.remove('companion-minimized');resume.hidden=true;document.body.style.overflow='hidden';};
 document.getElementById('companion-minimize').onclick=minimize;
 document.getElementById('companion-music').onclick=()=>{minimize();document.getElementById('header-music-btn')?.click();};
-let pendingReply=null;
-window._triggerDelayedReply=()=>{if(pendingReply)return;const delay=settings.replyDelayMin+Math.random()*Math.max(0,settings.replyDelayMax-settings.replyDelayMin);pendingReply=setTimeout(()=>{pendingReply=null;if(page.classList.contains('active')&&typeof simulateReply==='function')simulateReply();},delay);};
+// Reply scheduling is owned by core.js for every chat surface.
 // Reject video interruptions while companion is active without changing the existing call probabilities.
 document.addEventListener('DOMContentLoaded',()=>{
  if(window.callFeature){const original=window.callFeature.showIncomingCall;window.callFeature.showIncomingCall=(...args)=>{if(!page.classList.contains('active'))return original(...args);};}

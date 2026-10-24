@@ -1201,6 +1201,11 @@ function renderMessages(preserveScroll = false) {
     }
 }
 
+window._registerPartnerMessageListener = function(callback) {
+    const handler = event => { const m=event.detail; if(m && m.sender && m.sender!=='user' && m.sender!=='system' && m.type==='normal') callback(m); };
+    window.addEventListener('chat-message-added', handler);
+    return () => window.removeEventListener('chat-message-added', handler);
+};
 const addMessage = (message) => {
     if (!(message.timestamp instanceof Date)) message.timestamp = new Date(message.timestamp);
     
@@ -1548,8 +1553,10 @@ if (!isBatchMode && type === 'normal') window._triggerDelayedReply();
         })();
 
 window._triggerDelayedReply = function() {
-    const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-    const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
+    const min = Math.min(300000, Math.max(0, Number(settings.replyDelayMin) || 0));
+    const rawMax = Number(settings.replyDelayMax);
+    const max = Number.isFinite(rawMax) ? Math.min(300000, Math.max(min, rawMax)) : min;
+    const randomDelay = min + Math.random() * (max - min);
 
     const chance = Math.max(0, Math.min(1, Number(settings.readNoReplyChance) || 0));
     const shouldIgnore = settings.allowReadNoReply && (Math.random() < chance);
@@ -1566,8 +1573,8 @@ window._triggerDelayedReply = function() {
         if (changed) { _updateReadReceiptsDOM(); throttledSaveData(); }
     }, readDelay);
 
-    if (window._pendingReplyTimer) clearTimeout(window._pendingReplyTimer);
-    window._pendingReplyTimer = null;
+    // Keep a promised reply: additional messages must not postpone or cancel it.
+    if (window._pendingReplyTimer) return;
 
             if (!shouldIgnore) {
         if (settings.typingIndicatorEnabled) {
