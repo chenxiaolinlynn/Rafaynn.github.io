@@ -1594,12 +1594,12 @@ window._triggerDelayedReply = function() {
         }
         window._pendingReplyTimer = setTimeout(() => {
             window._pendingReplyTimer = null;
-            simulateReply();
+            simulateReply({ delayElapsed: true });
         }, randomDelay);
     }
 
 };
-        window.simulateReply = function() {
+        window.simulateReply = function(options = {}) {
             function showTypingIndicator() {
                 if (!settings.typingIndicatorEnabled) return;
                 const tiWrapper = document.getElementById('typing-indicator-wrapper');
@@ -1682,8 +1682,10 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 ? messages.filter(m => m.sender === 'user' && m.text).slice(-10)
                 : [];
             for (let i = 0; i < replyCount; i++) {
-                const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-                delay += settings.replyDelayMin + Math.random() * delayRange;
+                const min = Math.min(300000, Math.max(0, Number(settings.replyDelayMin) || 0));
+                const rawMax = Number(settings.replyDelayMax);
+                const max = Number.isFinite(rawMax) ? Math.min(300000, Math.max(min, rawMax)) : min;
+                if (i > 0 || options.delayElapsed !== true) delay += min + Math.random() * (max - min);
                 setTimeout(() => {
                     try {
                     const replyPool = replyPoolOnce;
