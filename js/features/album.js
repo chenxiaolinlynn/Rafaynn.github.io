@@ -201,7 +201,7 @@ function _alRenderList() {
         const moreBtn = album.isSystem ? '' : `<button class="al-album-more" onclick="event.stopPropagation();window._alAlbumMore(event,'${album.id}')" title="更多操作"><i class="fas fa-ellipsis-h"></i></button>`;
         html += `<div class="al-album-card" onclick="window._alOpenAlbum('${album.id}')">
             <div class="al-cover">${coverHtml}</div>
-            <div class="al-album-info">${lock}<span class="al-album-name">${album.name}</span>${cntHtml}${moreBtn}</div>
+            <div class="al-album-info">${lock}<span class="al-album-name">${_alEscapeName(album.name)}</span>${cntHtml}${moreBtn}</div>
         </div>`;
     });
 
@@ -529,10 +529,46 @@ window._alPermDelete = function(id) {
     });
 };
 
+function _alEscapeName(value) { const el = document.createElement('span'); el.textContent = value; return el.innerHTML; }
+function _alNameDialog(title, initial, onSave) {
+    document.getElementById('al-name-dialog')?.remove();
+    const sheet = document.createElement('div');
+    sheet.id = 'al-name-dialog';
+    sheet.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:20px;';
+    sheet.innerHTML = '<form role="dialog" aria-modal="true" aria-labelledby="al-name-title" style="background:var(--bg-color,#fff);color:var(--text-primary,#222);padding:24px;border-radius:20px;width:100%;max-width:360px;box-sizing:border-box"><h3 id="al-name-title"></h3><input aria-label="相册名称" maxlength="60" required style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #ddd;border-radius:10px;font:inherit"><p role="alert" style="color:#b33"></p><div style="display:flex;justify-content:flex-end;gap:12px"><button type="button">取消</button><button type="submit">保存</button></div></form>';
+    const form = sheet.querySelector('form');
+    const input = sheet.querySelector('input');
+    const error = sheet.querySelector('[role="alert"]');
+    sheet.querySelector('h3').textContent = title;
+    input.value = initial || '';
+    const close = () => sheet.remove();
+    sheet.querySelector('[type="button"]').onclick = close;
+    sheet.onclick = e => { if(e.target === sheet) close(); };
+    sheet.onkeydown = e => { if(e.key === 'Escape') close(); };
+    let saving = false;
+    form.onsubmit = async e => {
+        e.preventDefault();
+        if (saving) return;
+        const name = input.value.trim();
+        if (!name) { error.textContent = '请输入相册名称'; input.focus(); return; }
+        saving = true;
+        try { await onSave(name); close(); }
+        catch(e) { error.textContent = '保存失败，请重试'; }
+        finally { saving = false; }
+    };
+    (document.querySelector('.couple-module') || document.body).appendChild(sheet);
+    input.focus();
+}
 window._alCreateAlbum = function() {
-    const name = prompt('相册名称：'); if (!name||!name.trim()) return;
-    albumData.albums.push({ id:_alUid('alb'), name:name.trim(), isSystem:false, createdAt:Date.now() });
-    saveAlbumData(); _alRenderList();
+    _alNameDialog('新建相册', '', async name => {
+        if (!_albumDataLoaded) await loadAlbumData();
+        if (!_albumDataLoaded) throw new Error('Album data unavailable');
+        const album = { id:_alUid('alb'), name, isSystem:false, createdAt:Date.now() };
+        albumData.albums.push(album);
+        try { await localforage.setItem(getStorageKey(_AL_KEY), albumData); }
+        catch(e) { albumData.albums = albumData.albums.filter(a => a.id !== album.id); throw e; }
+        _alRenderList();
+    });
 };
 
 window._alUploadToAlbum = function(albumId, input) {
@@ -617,8 +653,8 @@ window._alDeleteAlbum = function(albumId) {
     if (!album || album.isSystem) return;
     const cnt = albumData.photos.filter(p => p.albumId === albumId && !p.deletedAt).length;
     const msg = cnt > 0
-        ? `删除「${album.name}」后，相册内 ${cnt} 张照片也会进入回收站。确定删除吗？`
-        : `确定删除「${album.name}」吗？`;
+        ? `删除「${_alEscapeName(album.name)}」后，相册内 ${cnt} 张照片也会进入回收站。确定删除吗？`
+        : `确定删除「${_alEscapeName(album.name)}」吗？`;
     if (!confirm(msg)) return;
     // 相册内所有图片进回收站
     albumData.photos.filter(p => p.albumId === albumId && !p.deletedAt)
