@@ -744,6 +744,8 @@ html:not([data-theme="dark"])[data-color-theme="black-white"] .message-sent{
         if (!hdr || !win) return;
         let on = false;
         hdr.addEventListener('pointerdown', e => {
+            // Header controls must retain their click target instead of starting a drag.
+            if (e.target.closest('button, input, select, textarea, a')) return;
             if (e.pointerType === 'mouse' && e.button !== 0) return;
             e.preventDefault();
             const r = win.getBoundingClientRect();
