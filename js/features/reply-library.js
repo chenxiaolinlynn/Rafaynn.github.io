@@ -2290,12 +2290,7 @@ function initReplyLibraryListeners() {
                 document.getElementById('sticker-file-input')?.click(); return;
             }
             if (currentSubTab === 'emojis') {
-                const input = prompt('请输入要添加的 Emoji（支持组合表情）:');
-                if (input?.trim()) {
-                    customEmojis.push(input.trim());
-                    throttledSaveData(); renderReplyLibrary();
-                    showNotification('✓ Emoji 已添加', 'success');
-                }
+                _showEmojiAddDialog();
                 return;
             }
             if (currentSubTab === 'custom' || currentSubTab === 'pokes' || currentSubTab === 'statuses') {
@@ -2497,4 +2492,42 @@ function applyAllAvatarFrames() {
     if (settings.avatarCornerRadius) {
         document.documentElement.style.setProperty('--avatar-corner-radius', settings.avatarCornerRadius + 'px');
     }
+}
+
+// In-page input works in embedded browsers where native prompt is unavailable.
+function _showEmojiAddDialog() {
+    document.getElementById('emoji-add-dialog')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'emoji-add-dialog';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:100005;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = '<form role="dialog" aria-modal="true" aria-labelledby="emoji-add-title" style="width:100%;max-width:360px;padding:24px;border-radius:20px;box-sizing:border-box;background:var(--secondary-bg,#fff);color:var(--text-primary,#222)"><h3 id="emoji-add-title">添加 Emoji</h3><p>输入或粘贴表情，支持组合表情</p><input aria-label="Emoji" required autocomplete="off" style="box-sizing:border-box;width:100%;font:inherit;font-size:26px;padding:12px;border-radius:12px;border:1px solid var(--border-color,#ddd);background:var(--primary-bg,#fff);color:inherit"><p role="alert"></p><div style="display:flex;gap:12px;justify-content:flex-end"><button class="modal-btn modal-btn-secondary" type="button">取消</button><button class="modal-btn modal-btn-primary" type="submit">添加</button></div></form>';
+    const input = overlay.querySelector('input');
+    const error = overlay.querySelector('[role="alert"]');
+    const close = () => overlay.remove();
+    overlay.querySelector('[type="button"]').onclick = close;
+    overlay.onclick = e => { if (e.target === overlay) close(); };
+    overlay.onkeydown = e => { if (e.key === 'Escape') close(); };
+    let saving = false;
+    overlay.querySelector('form').onsubmit = async e => {
+        e.preventDefault();
+        if (saving) return;
+        const value = input.value.trim();
+        if (!value) { error.textContent = '请输入表情'; return; }
+        if (customEmojis.includes(value)) { error.textContent = '这个表情已经添加过了'; return; }
+        saving = true;
+        customEmojis.push(value);
+        try {
+            await localforage.setItem(getStorageKey('customEmojis'), customEmojis);
+        } catch (err) {
+            customEmojis = customEmojis.filter(item => item !== value);
+            error.textContent = '保存失败，请重试';
+            saving = false;
+            return;
+        }
+        close();
+        renderReplyLibrary();
+        showNotification('✓ Emoji 已添加', 'success');
+    };
+    document.body.appendChild(overlay);
+    input.focus();
 }
