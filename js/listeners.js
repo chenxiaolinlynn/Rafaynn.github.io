@@ -2259,14 +2259,27 @@ playlist.style.top = (rect.top + (player.classList.contains('collapsed') ? 65 : 
             });
 
             DOMElements.sendBtn.addEventListener('click', () => isBatchMode ? addToBatch(): sendMessage());
+            let chatInputComposing = false;
+            const resizeChatInput = () => {
+                const input = DOMElements.messageInput;
+                input.style.height = 'auto';
+                input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+            };
+            DOMElements.messageInput.addEventListener('compositionstart', () => { chatInputComposing = true; });
+            DOMElements.messageInput.addEventListener('compositionend', () => {
+                chatInputComposing = false;
+                resizeChatInput();
+            });
             DOMElements.messageInput.addEventListener('keydown', e => {
-                if (e.isComposing || e.keyCode === 229) return;
+                if (chatInputComposing || e.isComposing || e.keyCode === 229) return;
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault(); isBatchMode ? addToBatch(): sendMessage();
                 }
             });
-            DOMElements.messageInput.addEventListener('input', () => {
-                DOMElements.messageInput.style.height = 'auto'; DOMElements.messageInput.style.height = `${Math.min(DOMElements.messageInput.scrollHeight, 120)}px`;
+            DOMElements.messageInput.addEventListener('input', e => {
+                // Leave the native marked-text session and its layout untouched until selection ends.
+                if (chatInputComposing || e.isComposing) return;
+                resizeChatInput();
             });
 
 
