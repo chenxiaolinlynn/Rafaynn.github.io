@@ -2260,6 +2260,7 @@ playlist.style.top = (rect.top + (player.classList.contains('collapsed') ? 65 : 
 
             DOMElements.sendBtn.addEventListener('click', () => isBatchMode ? addToBatch(): sendMessage());
             DOMElements.messageInput.addEventListener('keydown', e => {
+                if (e.isComposing || e.keyCode === 229) return;
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault(); isBatchMode ? addToBatch(): sendMessage();
                 }

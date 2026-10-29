@@ -1171,13 +1171,18 @@
             outline: none;
             max-height: 120px;
             min-height: 46px;
-            transition: var(--transition);
+            transition: border-color .2s, background-color .2s;
             font-weight: 500;
             font-family: var(--font-family);
             font-size: inherit;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            white-space: pre-wrap;
+            overflow-x: hidden;
+            overflow-y: auto;
+            overflow-wrap: anywhere;
+            min-width: 0;
+            line-height: 1.5;
+            -webkit-text-fill-color: currentColor;
+            caret-color: var(--text-primary);
         }
         .message-input:focus {
             border-color: var(--accent-color);
@@ -10871,3 +10876,8 @@
             border-color: var(--accent-color) !important;
             outline: none;
         }
+
+/* Keep editable text legible without iOS focus zoom. */
+@media (max-width: 768px) {
+  #message-input { font-size: 16px; }
+}
