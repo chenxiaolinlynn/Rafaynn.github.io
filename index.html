@@ -2281,7 +2281,8 @@
         const trigger=document.getElementById('chat-tools-toggle'),menu=document.getElementById('chat-tools-menu');
         const close=()=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');};
         trigger.addEventListener('click',()=>{const open=menu.hidden;menu.hidden=!open;trigger.setAttribute('aria-expanded',String(open));});
-        menu.addEventListener('click',event=>{if(event.target.closest('button'))close();});
+        // Capture runs before feature buttons that stop propagation (e.g. sticker picker).
+        menu.addEventListener('click',event=>{if(event.target.closest('button'))close();},true);
         document.addEventListener('click',event=>{if(!event.target.closest('.chat-tools'))close();});
         document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.hidden){close();trigger.focus();}});
     })();
